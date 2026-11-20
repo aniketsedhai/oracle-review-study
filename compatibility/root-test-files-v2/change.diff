@@ -1,0 +1,58 @@
+--- original/patches.py
++++ v2/patches.py
+@@ -35,7 +35,8 @@
+     parsed = PurePosixPath(path)
+     if parsed.is_absolute() or ".." in parsed.parts or not path.endswith(".py"):
+         return False
+-    return any(path.startswith(root.rstrip("/") + "/") for root in test_roots)
++    return any(path == root if root.endswith(".py") else path.startswith(root.rstrip("/") + "/")
++               for root in test_roots)
+ 
+ 
+ def check_forward_application(env, patch: str) -> dict:
+@@ -92,8 +93,12 @@
+     modes = command(f"git ls-files --stage -- {quoted_paths}")
+     if modes["returncode"]:
+         return Candidate("", paths, False, "file_modes_failed")
+-    if any(line.split()[0] != "100644" for line in modes["output"].splitlines()):
+-        return Candidate("", paths, False, "unsupported_file_mode")
++    for line in modes["output"].splitlines():
++        metadata, _, path = line.partition("\t")
++        mode = metadata.split()[0]
++        existing_root_test = path in test_roots and path.endswith(".py")
++        if mode != "100644" and not (mode == "100755" and existing_root_test):
++            return Candidate("", paths, False, "unsupported_file_mode")
+     special = command(f"find {quoted_paths} -prune -type l -print")
+     # find can report missing deleted files; deletions still need semantic review.
+     if special["output"].strip() and special["returncode"] == 0:
+--- original/test_layout.py
++++ v2/test_layout.py
+@@ -9,6 +9,8 @@
+         parsed = PurePosixPath(path)
+         if parsed.is_absolute() or ".." in parsed.parts or parsed.suffix != ".py":
+             continue
++        if len(parsed.parts) == 1 and parsed.name.startswith("test_"):
++            roots.add(path)
+         for index, part in enumerate(parsed.parts[:-1]):
+             if part in {"tests", "testing"}:
+                 roots.add("/".join(parsed.parts[:index + 1]))
+--- original/isolation.py
++++ v2/isolation.py
+@@ -37,7 +37,7 @@
+         path.chmod(stat.S_IMODE(path.stat().st_mode) & ~0o222)
+ for relative in ['.git'] + roots:
+     target = base / relative
+-    if not target.is_dir() or target.is_symlink() or base not in target.resolve().parents:
++    if not (target.is_dir() or target.is_file()) or target.is_symlink() or base not in target.resolve().parents:
+         raise RuntimeError('Configured writable directory is missing or unsafe')
+     for path in entries(target):
+         os.chown(path, user.pw_uid, user.pw_gid, follow_symlinks=False)
+@@ -62,7 +62,7 @@
+         "assert not os.access('/testbed', os.W_OK); "
+         "assert all(os.access('/testbed/'+r, os.W_OK) for r in roots); "
+         "assert all(not os.access(p, os.W_OK) for p in Path('/testbed').iterdir() "
+-        "if p.is_file()); print('Permission boundary verified')")})
++        "if p.is_file() and p.name not in roots); print('Permission boundary verified')")})
+     if probe["returncode"]:
+         raise RuntimeError("Checkout permission probe failed")
+     return {"setup": result, "probe": probe, "agent_user": "nobody", "test_roots": test_roots}

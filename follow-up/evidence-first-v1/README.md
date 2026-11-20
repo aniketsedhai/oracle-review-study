@@ -1,0 +1,5 @@
+# Evidence-first generation: final exploratory experiment
+
+One prompt intervention before test construction: identify trigger, supported expected behavior, actual observation, and failure relevance. Runs the baseline branch with its full original 30-call / $1 estimated / 600-second allowance. No additional reviewer, edit-verification controller, or evaluator feedback. Same model, generation inputs, isolation, test layout compatibility, and official unit-test evaluation as the original study.
+
+All 26 selected instances are included, with no outcome-based selection. This is exploratory after inspecting prior outcomes, not a held-out confirmation or isolated causal estimate against independent baseline generations. Original artifacts remain frozen. Conservative batch ceiling $3.50; no further workflow experiments after this attempt. Target results cutoff 11:00 a.m. Chicago on November 16, then slides and rehearsal take priority. If incomplete, present the original completed study and label partial results.

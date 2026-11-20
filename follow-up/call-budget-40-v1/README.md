@@ -1,0 +1,5 @@
+# Exploratory 40-call budget experiment
+
+Fresh paired runs of baseline and oracle review with edit verification across the same 26 instances. Both have a 40-call total cap, unchanged $1 conservative estimated token-cost cap and 600-second total time cap. Review generation has at most 25 calls, $0.60 and 360 seconds, with residual shared allowance for review. Same model, prompts, test-layout compatibility, isolation, and evaluation as the verified-edits version. Baseline executes the non-review controller branch. Unique prediction tags and run names preserve earlier artifacts.
+
+This tests larger resource allowances and their allocation, not an isolated effect of call count. It is exploratory after previous outcomes. Record all results regardless of whether they improve. Stop starting new pairs at 1:45 p.m. Chicago November 16 to protect slide submission. Unstarted cases remain in the 26-instance ledger; any incomplete batch must be labeled incomplete and cannot support a complete-comparison claim. Keep the completed 30-call slides as the submission fallback.
