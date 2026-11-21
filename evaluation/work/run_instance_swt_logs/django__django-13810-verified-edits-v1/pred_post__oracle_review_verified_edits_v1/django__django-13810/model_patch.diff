@@ -1,0 +1,38 @@
+diff --git a/tests/middleware_exceptions/tests.py b/tests/middleware_exceptions/tests.py
+index 8b019ba..df1bf7a 100644
+--- a/tests/middleware_exceptions/tests.py
++++ b/tests/middleware_exceptions/tests.py
+@@ -339,3 +339,33 @@ class AsyncMiddlewareTests(SimpleTestCase):
+     async def test_process_view_return_response(self):
+         response = await self.async_client.get('/middleware_exceptions/view/')
+         self.assertEqual(response.content, b'Processed view normal_view')
++
++
++@override_settings(
++    DEBUG=True,
++    ROOT_URLCONF='middleware_exceptions.urls',
++)
++class MiddlewareNotUsedAsyncTests(SimpleTestCase):
++    """
++    A middleware raising MiddlewareNotUsed must not leave the handler in an
++    adapted state that poisons the rest of the middleware chain (#32334).
++    """
++    @override_settings(MIDDLEWARE=[
++        'middleware_exceptions.middleware.PaymentMiddleware',
++        'middleware_exceptions.tests.MyMiddleware',
++        'middleware_exceptions.middleware.LogMiddleware',
++    ])
++    async def test_middleware_not_used_does_not_poison_chain(self):
++        response = await self.async_client.get('/middleware_exceptions/view/')
++        self.assertEqual(response.status_code, 402)
++        self.assertEqual(response.content, b'OK')
++
++    @override_settings(MIDDLEWARE=[
++        'middleware_exceptions.middleware.PaymentMiddleware',
++        'middleware_exceptions.tests.MyMiddleware',
++        'middleware_exceptions.middleware.LogMiddleware',
++    ])
++    def test_middleware_not_used_does_not_poison_chain_sync(self):
++        response = self.client.get('/middleware_exceptions/view/')
++        self.assertEqual(response.status_code, 402)
++        self.assertEqual(response.content, b'OK')

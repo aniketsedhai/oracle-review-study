@@ -1,0 +1,68 @@
+diff --git a/tests/view_tests/tests/test_debug.py b/tests/view_tests/tests/test_debug.py
+index 3cbeb2e..b506192 100644
+--- a/tests/view_tests/tests/test_debug.py
++++ b/tests/view_tests/tests/test_debug.py
+@@ -618,6 +618,63 @@ class ExceptionReporterTests(SimpleTestCase):
+         self.assertEqual(last_frame['filename'], __file__)
+         self.assertEqual(last_frame['function'], 'test_func')
+ 
++    def test_reporting_frames_with_suppressed_context(self):
++        try:
++            try:
++                raise RuntimeError('inner')
++            except RuntimeError:
++                raise ValueError('outer') from None
++        except Exception:
++            exc_type, exc_value, tb = sys.exc_info()
++        request = self.rf.get('/test_view/')
++        reporter = ExceptionReporter(request, exc_type, exc_value, tb)
++        frames = reporter.get_traceback_frames()
++        # The suppressed RuntimeError context isn't reported.
++        self.assertEqual(len(frames), 1)
++        self.assertIsNone(frames[0]['exc_cause'])
++        html = reporter.get_traceback_html()
++        self.assertNotIn('During handling of the above exception', html)
++        self.assertNotIn('was the direct cause of the following exception', html)
++        text = reporter.get_traceback_text()
++        self.assertNotIn('During handling of the above exception', text)
++        self.assertNotIn('was the direct cause of the following exception', text)
++
++    def test_reporting_frames_with_explicit_cause(self):
++        try:
++            try:
++                raise RuntimeError('inner')
++            except RuntimeError as exc:
++                raise ValueError('outer') from exc
++        except Exception:
++            exc_type, exc_value, tb = sys.exc_info()
++        request = self.rf.get('/test_view/')
++        reporter = ExceptionReporter(request, exc_type, exc_value, tb)
++        frames = reporter.get_traceback_frames()
++        self.assertEqual(len(frames), 2)
++        self.assertEqual(str(frames[-1]['exc_cause']), 'inner')
++        self.assertIs(frames[-1]['exc_cause_explicit'], frames[-1]['exc_cause'])
++        self.assertIsNone(frames[0]['exc_cause_explicit'])
++        html = reporter.get_traceback_html()
++        self.assertIn('was the direct cause of the following exception', html)
++
++    def test_reporting_frames_with_implicit_context(self):
++        try:
++            try:
++                raise RuntimeError('inner')
++            except RuntimeError:
++                raise ValueError('outer')
++        except Exception:
++            exc_type, exc_value, tb = sys.exc_info()
++        request = self.rf.get('/test_view/')
++        reporter = ExceptionReporter(request, exc_type, exc_value, tb)
++        frames = reporter.get_traceback_frames()
++        self.assertEqual(len(frames), 2)
++        self.assertEqual(str(frames[-1]['exc_cause']), 'inner')
++        self.assertIsNone(frames[-1]['exc_cause_explicit'])
++        self.assertIsNone(frames[0]['exc_cause_explicit'])
++        html = reporter.get_traceback_html()
++        self.assertIn('During handling of the above exception', html)
++
+     def test_request_and_message(self):
+         "A message can be provided in addition to a request"
+         request = self.rf.get('/test_view/')

@@ -1,0 +1,142 @@
+diff --git a/tests/lint/test_run_pylint.py b/tests/lint/test_run_pylint.py
+new file mode 100644
+index 0000000..a60d808
+--- /dev/null
++++ b/tests/lint/test_run_pylint.py
+@@ -0,0 +1,136 @@
++# Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
++# For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
++# Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
++
++"""Tests for pylint.lint.run helpers (CPU detection)."""
++
++from __future__ import annotations
++
++import os
++from pathlib import Path
++from unittest.mock import patch
++
++import pytest
++
++from pylint.lint import run as run_module
++from pylint.lint.run import _cpu_count, _query_cpu
++
++
++def _make_fake_path(files: dict[str, str]):
++    """Return a Path replacement that reports ``files`` as existing."""
++
++    class FakePath:
++        def __init__(self, path: str) -> None:
++            self._path = str(path)
++
++        def is_file(self) -> bool:
++            return self._path in files
++
++        def __str__(self) -> str:
++            return self._path
++
++        def __fspath__(self) -> str:
++            return self._path
++
++    return FakePath
++
++
++def _make_fake_open(files: dict[str, str]):
++    def fake_open(path, *args, **kwargs):
++        import io
++
++        return io.StringIO(files[str(path)])
++
++    return fake_open
++
++
++def _query_cpu_with(files: dict[str, str]) -> int | None:
++    fake_path = _make_fake_path(files)
++    fake_open = _make_fake_open(files)
++    with patch.object(run_module, "Path", fake_path), patch(
++        "builtins.open", fake_open
++    ):
++        return _query_cpu()
++
++
++def test_query_cpu_no_cgroup_files() -> None:
++    """Without any cgroup files, no CPU count can be determined."""
++    assert _query_cpu_with({}) is None
++
++
++def test_query_cpu_quota_and_period() -> None:
++    """Quota divided by period gives the number of allotted CPUs."""
++    files = {
++        "/sys/fs/cgroup/cpu/cpu.cfs_quota_us": "200000\n",
++        "/sys/fs/cgroup/cpu/cpu.cfs_period_us": "100000\n",
++    }
++    assert _query_cpu_with(files) == 2
++
++
++def test_query_cpu_quota_minus_one_uses_shares() -> None:
++    """A quota of -1 falls back to cpu.shares."""
++    files = {
++        "/sys/fs/cgroup/cpu/cpu.cfs_quota_us": "-1\n",
++        "/sys/fs/cgroup/cpu/cpu.cfs_period_us": "100000\n",
++        "/sys/fs/cgroup/cpu/cpu.shares": "2048\n",
++    }
++    assert _query_cpu_with(files) == 2
++
++
++def test_query_cpu_shares_rounds_down_to_zero() -> None:
++    """Regression test for #6661: cpu.shares of 2 must not yield 0."""
++    files = {
++        "/sys/fs/cgroup/cpu/cpu.cfs_quota_us": "-1\n",
++        "/sys/fs/cgroup/cpu/cpu.cfs_period_us": "100000\n",
++        "/sys/fs/cgroup/cpu/cpu.shares": "2\n",
++    }
++    result = _query_cpu_with(files)
++    assert result is not None
++    assert result >= 1
++
++
++def test_query_cpu_shares_only_rounds_down_to_zero() -> None:
++    """cpu.shares alone (no quota file) must not yield 0 either."""
++    files = {"/sys/fs/cgroup/cpu/cpu.shares": "2\n"}
++    result = _query_cpu_with(files)
++    assert result is not None
++    assert result >= 1
++
++
++def test_cpu_count_never_zero_with_low_shares() -> None:
++    """_cpu_count must never return 0, even with a tiny cpu.shares value."""
++    files = {
++        "/sys/fs/cgroup/cpu/cpu.cfs_quota_us": "-1\n",
++        "/sys/fs/cgroup/cpu/cpu.cfs_period_us": "100000\n",
++        "/sys/fs/cgroup/cpu/cpu.shares": "2\n",
++    }
++    fake_path = _make_fake_path(files)
++    fake_open = _make_fake_open(files)
++    with patch.object(run_module, "Path", fake_path), patch(
++        "builtins.open", fake_open
++    ):
++        assert _cpu_count() >= 1
++
++
++def test_cpu_count_uses_sched_affinity() -> None:
++    """_cpu_count uses sched_getaffinity when available."""
++    with patch.object(run_module, "_query_cpu", return_value=None), patch.object(
++        os, "sched_getaffinity", return_value={0, 1, 2}, create=True
++    ):
++        assert _cpu_count() == 3
++
++
++def test_cpu_count_takes_min_of_share_and_affinity() -> None:
++    """_cpu_count returns the minimum of the cgroup share and affinity count."""
++    with patch.object(run_module, "_query_cpu", return_value=1), patch.object(
++        os, "sched_getaffinity", return_value={0, 1, 2, 3}, create=True
++    ):
++        assert _cpu_count() == 1
++
++
++def test_cpu_count_falls_back_to_multiprocessing() -> None:
++    """Without sched_getaffinity, multiprocessing.cpu_count is used."""
++    with patch.object(run_module, "_query_cpu", return_value=None), patch.object(
++        os, "sched_getaffinity", None
++    ), patch.object(run_module.multiprocessing, "cpu_count", return_value=4):
++        assert _cpu_count() == 4

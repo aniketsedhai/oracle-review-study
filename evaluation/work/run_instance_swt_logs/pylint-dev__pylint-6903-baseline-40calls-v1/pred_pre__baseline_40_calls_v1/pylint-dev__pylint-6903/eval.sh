@@ -1,0 +1,156 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD ca80f03a43bc39e4cc2c67dc99817b3c9f13b8a6 >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff ca80f03a43bc39e4cc2c67dc99817b3c9f13b8a6
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .
+git apply -v - <<'EOF_114329324912'
+diff --git a/tests/lint/test_run_pylint.py b/tests/lint/test_run_pylint.py
+new file mode 100644
+index 0000000..09c40e9
+--- /dev/null
++++ b/tests/lint/test_run_pylint.py
+@@ -0,0 +1,129 @@
++# Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
++# For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
++# Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
++
++"""Tests for the cpu detection helpers in pylint.lint.run."""
++
++from __future__ import annotations
++
++import os
++from pathlib import Path
++from unittest.mock import patch
++
++import pytest
++
++from pylint.lint import run as run_module
++from pylint.lint.run import _cpu_count, _query_cpu
++
++
++class _FakePath:
++    """Minimal stand-in for pathlib.Path used to fake cgroup files."""
++
++    def __init__(self, files: dict[str, str]) -> None:
++        self._files = files
++
++    def __call__(self, path: str) -> "_FakePath":
++        self._current = path
++        return self
++
++    def is_file(self) -> bool:
++        return self._current in self._files
++
++    def __str__(self) -> str:
++        return self._current
++
++
++def _patch_cgroup_files(files: dict[str, str]):
++    """Patch Path and open so that only the given cgroup files exist."""
++
++    fake_path = _FakePath(files)
++    real_open = open
++
++    def fake_open(path, *args, **kwargs):
++        if str(path) in files:
++            import io
++
++            return io.StringIO(files[str(path)])
++        return real_open(path, *args, **kwargs)
++
++    return patch.object(run_module, "Path", fake_path), patch(
++        "builtins.open", fake_open
++    )
++
++
++def test_query_cpu_quota_and_period() -> None:
++    files = {
++        "/sys/fs/cgroup/cpu/cpu.cfs_quota_us": "200000\n",
++        "/sys/fs/cgroup/cpu/cpu.cfs_period_us": "100000\n",
++    }
++    path_patch, open_patch = _patch_cgroup_files(files)
++    with path_patch, open_patch:
++        assert _query_cpu() == 2
++
++
++def test_query_cpu_quota_minus_one_falls_back_to_shares() -> None:
++    files = {
++        "/sys/fs/cgroup/cpu/cpu.cfs_quota_us": "-1\n",
++        "/sys/fs/cgroup/cpu/cpu.cfs_period_us": "100000\n",
++        "/sys/fs/cgroup/cpu/cpu.shares": "2048\n",
++    }
++    path_patch, open_patch = _patch_cgroup_files(files)
++    with path_patch, open_patch:
++        assert _query_cpu() == 2
++
++
++def test_query_cpu_no_files() -> None:
++    path_patch, open_patch = _patch_cgroup_files({})
++    with path_patch, open_patch:
++        assert _query_cpu() is None
++
++
++def test_query_cpu_low_shares_never_returns_zero() -> None:
++    """Regression test: a low cpu.shares value must not yield 0 CPUs.
++
++    See https://github.com/PyCQA/pylint/issues/6667: in a Kubernetes pod
++    cpu.shares can be as low as 2, which used to be truncated to 0 and
++    crashed multiprocessing.
++    """
++    files = {
++        "/sys/fs/cgroup/cpu/cpu.cfs_quota_us": "-1\n",
++        "/sys/fs/cgroup/cpu/cpu.cfs_period_us": "100000\n",
++        "/sys/fs/cgroup/cpu/cpu.shares": "2\n",
++    }
++    path_patch, open_patch = _patch_cgroup_files(files)
++    with path_patch, open_patch:
++        result = _query_cpu()
++    assert result is not None
++    assert result >= 1
++
++
++def test_query_cpu_fractional_quota_never_returns_zero() -> None:
++    files = {
++        "/sys/fs/cgroup/cpu/cpu.cfs_quota_us": "50000\n",
++        "/sys/fs/cgroup/cpu/cpu.cfs_period_us": "100000\n",
++    }
++    path_patch, open_patch = _patch_cgroup_files(files)
++    with path_patch, open_patch:
++        result = _query_cpu()
++    assert result is not None
++    assert result >= 1
++
++
++def test_cpu_count_never_returns_zero() -> None:
++    """_cpu_count must always return a positive number of CPUs."""
++    with patch.object(run_module, "_query_cpu", return_value=0):
++        assert _cpu_count() >= 1
++
++
++def test_cpu_count_uses_min_of_share_and_affinity() -> None:
++    with patch.object(run_module, "_query_cpu", return_value=2), patch.object(
++        os, "sched_getaffinity", create=True, return_value={0, 1, 2, 3}
++    ):
++        assert _cpu_count() == 2
++
++
++def test_cpu_count_without_share() -> None:
++    with patch.object(run_module, "_query_cpu", return_value=None), patch.object(
++        os, "sched_getaffinity", create=True, return_value={0, 1, 2, 3}
++    ):
++        assert _cpu_count() == 4
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(pylint/lint/run\.py)' -m pytest --no-header -rA  -p no:cacheprovider tests/lint/test_run_pylint.py
+cat coverage.cover
+git checkout ca80f03a43bc39e4cc2c67dc99817b3c9f13b8a6
+git apply /root/pre_state.patch

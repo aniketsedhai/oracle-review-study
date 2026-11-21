@@ -1,0 +1,111 @@
+2026-11-16 12:49:51,197 - WARNING - Starting evaluation at 1794854991.1978729
+2026-11-16 12:49:51,280 - INFO - Creating container for psf__requests-2931...
+2026-11-16 12:49:51,302 - INFO - Container for psf__requests-2931 created: 21902399b0f33faf558dd0608eea8f71c0b54cddb65735c38bf127874b1f4a76
+2026-11-16 12:49:51,362 - INFO - Container for psf__requests-2931 started: 21902399b0f33faf558dd0608eea8f71c0b54cddb65735c38bf127874b1f4a76
+2026-11-16 12:49:51,396 - INFO - Git diff before:
+
+2026-11-16 12:49:51,396 - INFO - Eval script for psf__requests-2931 written to eval.sh, now applying to container...
+2026-11-16 12:49:53,615 - INFO - Test output for psf__requests-2931 written to run_instance_swt_logs/psf__requests-2931-baseline-40calls-v1/pred_post__baseline_40_calls_v1/psf__requests-2931/test_output.txt
+2026-11-16 12:49:53,634 - INFO - Git diff after:
+diff --git a/requests/models.py b/requests/models.py
+index 9c624d3c..4bcbc548 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -81,7 +81,7 @@ class RequestEncodingMixin(object):
+         """
+ 
+         if isinstance(data, (str, bytes)):
+-            return to_native_string(data)
++            return data
+         elif hasattr(data, 'read'):
+             return data
+         elif hasattr(data, '__iter__'):
+@@ -385,6 +385,9 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+             if isinstance(fragment, str):
+                 fragment = fragment.encode('utf-8')
+ 
++        if isinstance(params, (str, bytes)):
++            params = to_native_string(params)
++
+         enc_params = self._encode_params(params)
+         if enc_params:
+             if query:
+diff --git a/test_requests.py b/test_requests.py
+index 137edc08..92efe2c2 100755
+--- a/test_requests.py
++++ b/test_requests.py
+@@ -1739,3 +1739,69 @@ def test_vendor_aliases():
+ 
+ if __name__ == '__main__':
+     unittest.main()
++
++
++def test_prepare_binary_payload():
++    """A bytes payload must be passed through unchanged when preparing.
++
++    Regression test: preparing a request with a non-ASCII bytes body used to
++    raise a UnicodeDecodeError because the payload was run through
++    ``to_native_string`` (which assumes ASCII).
++    """
++    payload = u('ööö').encode('utf-8')
++    p = PreparedRequest()
++    p.prepare(
++        method='PUT',
++        url='http://www.example.com/put',
++        data=payload,
++        hooks=default_hooks()
++    )
++    assert p.body == payload
++
++
++def test_prepare_ascii_bytes_payload():
++    """ASCII bytes payloads are also passed through unchanged."""
++    payload = b'hello world'
++    p = PreparedRequest()
++    p.prepare(
++        method='POST',
++        url='http://www.example.com/post',
++        data=payload,
++        hooks=default_hooks()
++    )
++    assert p.body == payload
++
++
++def test_prepare_unicode_payload():
++    """A native (unicode) string payload is still accepted."""
++    payload = u('ööö')
++    p = PreparedRequest()
++    p.prepare(
++        method='PUT',
++        url='http://www.example.com/put',
++        data=payload,
++        hooks=default_hooks()
++    )
++    assert p.body == payload
++
++
++def test_encode_params_binary_payload():
++    """``_encode_params`` must not attempt to decode a bytes payload."""
++    payload = u('ööö').encode('utf-8')
++    assert PreparedRequest._encode_params(payload) == payload
++
++
++def test_binary_payload_put(httpbin):
++    """End-to-end: PUT with a binary payload succeeds."""
++    payload = u('ööö').encode('utf-8')
++    r = requests.put(httpbin('put'), data=payload)
++    assert r.status_code == 200
++    assert r.json()['data'] == u('ööö')
++
++
++def test_binary_payload_post(httpbin):
++    """End-to-end: POST with a binary payload succeeds."""
++    payload = u('ööö').encode('utf-8')
++    r = requests.post(httpbin('post'), data=payload)
++    assert r.status_code == 200
++    assert r.json()['data'] == u('ööö')
+2026-11-16 12:49:53,634 - INFO - Git diff changed after running eval script
+2026-11-16 12:49:53,634 - INFO - Attempting to stop container exec.eval.arm64.3a9417a9d4b5c62087edb6.47caa9b5873c3da266005d.4560260128...
+2026-11-16 12:50:08,752 - INFO - Attempting to remove container exec.eval.arm64.3a9417a9d4b5c62087edb6.47caa9b5873c3da266005d.4560260128...
+2026-11-16 12:50:08,768 - INFO - Container exec.eval.arm64.3a9417a9d4b5c62087edb6.47caa9b5873c3da266005d.4560260128 removed.
+2026-11-16 12:50:08,768 - WARNING - End of eval at 1794855008.768163

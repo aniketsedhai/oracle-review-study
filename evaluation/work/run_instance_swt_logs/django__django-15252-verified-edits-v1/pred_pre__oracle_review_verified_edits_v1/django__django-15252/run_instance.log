@@ -1,0 +1,160 @@
+2026-11-16 07:09:02,962 - WARNING - Starting evaluation at 1794834542.9627352
+2026-11-16 07:09:03,021 - INFO - Creating container for django__django-15252...
+2026-11-16 07:09:03,042 - INFO - Container for django__django-15252 created: ce900a5ab1735ee6829486b33af22e64ac60958c73be9a253b63d04f7f630c70
+2026-11-16 07:09:03,098 - INFO - Container for django__django-15252 started: ce900a5ab1735ee6829486b33af22e64ac60958c73be9a253b63d04f7f630c70
+2026-11-16 07:09:03,830 - INFO - Git diff before:
+
+2026-11-16 07:09:03,830 - INFO - Eval script for django__django-15252 written to eval.sh, now applying to container...
+2026-11-16 07:09:07,222 - INFO - Test output for django__django-15252 written to run_instance_swt_logs/django__django-15252-verified-edits-v1/pred_pre__oracle_review_verified_edits_v1/django__django-15252/test_output.txt
+2026-11-16 07:09:07,246 - INFO - Git diff after:
+diff --git a/tests/migrations/test_executor.py b/tests/migrations/test_executor.py
+index ca2c03cac5..9c60ef255e 100644
+--- a/tests/migrations/test_executor.py
++++ b/tests/migrations/test_executor.py
+@@ -760,6 +760,65 @@ class ExecutorTests(MigrationTestBase):
+         )
+ 
+ 
++    def _drop_migrations_table(self):
++        """Drop the django_migrations table to simulate a fresh database."""
++        recorder = MigrationRecorder(connection)
++        with connection.cursor() as cursor:
++            cursor.execute(
++                'DROP TABLE %s' % recorder.Migration._meta.db_table
++            )
++        self.assertFalse(recorder.has_table())
++
++    @override_settings(MIGRATION_MODULES={"migrations": "migrations.test_migrations"})
++    def test_migrate_skipped_if_router_disallows(self):
++        """The recorder doesn't create its table on databases where the
++        router disallows migrating the migrations app."""
++        class DisallowMigrationsRouter:
++            def allow_migrate(self, db, app_label, **hints):
++                return app_label != 'migrations'
++
++        self._drop_migrations_table()
++        recorder = MigrationRecorder(connection)
++        with override_settings(DATABASE_ROUTERS=[DisallowMigrationsRouter()]):
++            executor = MigrationExecutor(connection)
++            executor.migrate([("migrations", "0001_initial")])
++            self.assertFalse(recorder.has_table())
++            self.assertEqual(recorder.applied_migrations(), {})
++            self.assertTableNotExists("migrations_author")
++            self.assertTableNotExists("migrations_tribble")
++            executor.loader.build_graph()
++            executor.migrate([("migrations", None)])
++            self.assertFalse(recorder.has_table())
++
++    @override_settings(MIGRATION_MODULES={"migrations": "migrations.test_migrations"})
++    def test_migrate_allowed_if_router_allows(self):
++        """The recorder creates its table when the router allows migrating."""
++        class AllowMigrationsRouter:
++            def allow_migrate(self, db, app_label, **hints):
++                return app_label == 'migrations'
++
++        self._drop_migrations_table()
++        recorder = MigrationRecorder(connection)
++        with override_settings(DATABASE_ROUTERS=[AllowMigrationsRouter()]):
++            executor = MigrationExecutor(connection)
++            executor.migrate([("migrations", "0001_initial")])
++            self.assertTrue(recorder.has_table())
++            self.assertIn(
++                ("migrations", "0001_initial"),
++                recorder.applied_migrations(),
++            )
++            self.assertTableExists("migrations_author")
++            self.assertTableExists("migrations_tribble")
++            executor.loader.build_graph()
++            executor.migrate([("migrations", None)])
++            self.assertNotIn(
++                ("migrations", "0001_initial"),
++                recorder.applied_migrations(),
++            )
++            self.assertTableNotExists("migrations_author")
++            self.assertTableNotExists("migrations_tribble")
++
++
+ class FakeLoader:
+     def __init__(self, graph, applied):
+         self.graph = graph
+diff --git a/tests/migrations/test_loader.py b/tests/migrations/test_loader.py
+index 03a98506e3..f75696c373 100644
+--- a/tests/migrations/test_loader.py
++++ b/tests/migrations/test_loader.py
+@@ -8,7 +8,9 @@ from django.db.migrations.exceptions import (
+ )
+ from django.db.migrations.loader import MigrationLoader
+ from django.db.migrations.recorder import MigrationRecorder
+-from django.test import TestCase, modify_settings, override_settings
++from django.test import (
++    TestCase, TransactionTestCase, modify_settings, override_settings,
++)
+ 
+ from .test_base import MigrationTestBase
+ 
+@@ -46,6 +48,60 @@ class RecorderTests(TestCase):
+         )
+ 
+ 
++class RecorderRouterTests(TransactionTestCase):
++    """
++    Tests that the migration recorder obeys database router allow_migrate()
++    rules for the migrations app.
++    """
++    databases = {'default', 'other'}
++
++    def _drop_migrations_table(self, alias):
++        """Drop the django_migrations table to simulate a fresh database."""
++        recorder = MigrationRecorder(connections[alias])
++        with connections[alias].cursor() as cursor:
++            cursor.execute(
++                'DROP TABLE %s' % recorder.Migration._meta.db_table
++            )
++        self.assertFalse(recorder.has_table())
++
++    def test_migrate_skipped_if_router_disallows(self):
++        """The recorder doesn't create its table on databases where the
++        router disallows migrating the migrations app."""
++        class DisallowMigrationsRouter:
++            def allow_migrate(self, db, app_label, **hints):
++                return app_label != 'migrations'
++
++        self._drop_migrations_table('other')
++        recorder = MigrationRecorder(connections['other'])
++        with override_settings(DATABASE_ROUTERS=[DisallowMigrationsRouter()]):
++            recorder.record_applied('myapp', '0432_ponies')
++            self.assertFalse(recorder.has_table())
++            self.assertEqual(recorder.applied_migrations(), {})
++            recorder.record_unapplied('myapp', '0432_ponies')
++            self.assertFalse(recorder.has_table())
++
++    def test_migrate_allowed_if_router_allows(self):
++        """The recorder creates its table when the router allows migrating."""
++        class AllowMigrationsRouter:
++            def allow_migrate(self, db, app_label, **hints):
++                return app_label == 'migrations'
++
++        self._drop_migrations_table('other')
++        recorder = MigrationRecorder(connections['other'])
++        with override_settings(DATABASE_ROUTERS=[AllowMigrationsRouter()]):
++            recorder.record_applied('myapp', '0432_ponies')
++            self.assertTrue(recorder.has_table())
++            self.assertIn(
++                ('myapp', '0432_ponies'),
++                recorder.applied_migrations(),
++            )
++            recorder.record_unapplied('myapp', '0432_ponies')
++            self.assertNotIn(
++                ('myapp', '0432_ponies'),
++                recorder.applied_migrations(),
++            )
++
++
+ class LoaderTests(TestCase):
+     """
+     Tests the disk and database loader, and running through migrations
+2026-11-16 07:09:07,246 - INFO - Git diff changed after running eval script
+2026-11-16 07:09:07,246 - INFO - Attempting to stop container exec.eval.arm64.6b24dca158642bd6288384.55e28827f67f781ff3be26.4570227024...
+2026-11-16 07:09:22,382 - INFO - Attempting to remove container exec.eval.arm64.6b24dca158642bd6288384.55e28827f67f781ff3be26.4570227024...
+2026-11-16 07:09:22,403 - INFO - Container exec.eval.arm64.6b24dca158642bd6288384.55e28827f67f781ff3be26.4570227024 removed.
+2026-11-16 07:09:22,403 - WARNING - End of eval at 1794834562.40347

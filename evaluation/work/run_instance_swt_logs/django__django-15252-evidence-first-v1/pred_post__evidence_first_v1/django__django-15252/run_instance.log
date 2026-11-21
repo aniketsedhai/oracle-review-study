@@ -1,0 +1,75 @@
+2026-11-16 08:47:29,080 - WARNING - Starting evaluation at 1794840449.080697
+2026-11-16 08:47:29,163 - INFO - Creating container for django__django-15252...
+2026-11-16 08:47:29,192 - INFO - Container for django__django-15252 created: fac6b996fdb1de7cc690939f755df1c84d8525ad554131a489e47b96511dea9d
+2026-11-16 08:47:29,247 - INFO - Container for django__django-15252 started: fac6b996fdb1de7cc690939f755df1c84d8525ad554131a489e47b96511dea9d
+2026-11-16 08:47:29,657 - INFO - Git diff before:
+
+2026-11-16 08:47:29,657 - INFO - Eval script for django__django-15252 written to eval.sh, now applying to container...
+2026-11-16 08:47:33,317 - INFO - Test output for django__django-15252 written to run_instance_swt_logs/django__django-15252-evidence-first-v1/pred_post__evidence_first_v1/django__django-15252/test_output.txt
+2026-11-16 08:47:33,399 - INFO - Git diff after:
+diff --git a/django/db/migrations/executor.py b/django/db/migrations/executor.py
+index aa2fe0883b..89e9344a68 100644
+--- a/django/db/migrations/executor.py
++++ b/django/db/migrations/executor.py
+@@ -96,8 +96,12 @@ class MigrationExecutor:
+         (un)applied and in a second step run all the database operations.
+         """
+         # The django_migrations table must be present to record applied
+-        # migrations.
+-        self.recorder.ensure_schema()
++        # migrations, but don't create it if there are no migrations to apply.
++        if plan == []:
++            if not self.recorder.has_table():
++                return self._create_project_state(with_applied_migrations=False)
++        else:
++            self.recorder.ensure_schema()
+ 
+         if plan is None:
+             plan = self.migration_plan(targets)
+diff --git a/tests/migrations/test_commands.py b/tests/migrations/test_commands.py
+index bf78b60a85..a9eb62d022 100644
+--- a/tests/migrations/test_commands.py
++++ b/tests/migrations/test_commands.py
+@@ -31,6 +31,37 @@ class MigrateTests(MigrationTestBase):
+     """
+     databases = {'default', 'other'}
+ 
++    @override_settings(
++        MIGRATION_MODULES={"migrations": "migrations.test_migrations"},
++        DATABASE_ROUTERS=['migrations.routers.TestRouter'],
++    )
++    def test_migrate_recorder_obeys_router(self):
++        """
++        The MigrationRecorder doesn't create the django_migrations table on a
++        database where the router disallows migrating.
++        """
++        recorder = MigrationRecorder(connections['other'])
++        self.assertFalse(recorder.has_table())
++        recorder.record_applied("migrations", "0001_initial")
++        self.assertFalse(recorder.has_table())
++        self.assertEqual(recorder.applied_migrations(), {})
++        recorder.record_unapplied("migrations", "0001_initial")
++        self.assertFalse(recorder.has_table())
++
++    @override_settings(
++        MIGRATION_MODULES={"migrations": "migrations.test_migrations"},
++        DATABASE_ROUTERS=['migrations.routers.TestRouter'],
++    )
++    def test_migrate_other_database_does_not_create_migrations_table(self):
++        """
++        Running migrate against a database where the router disallows
++        migrating doesn't create the django_migrations table there.
++        """
++        call_command("migrate", "migrations", "0001", verbosity=0, database="other")
++        self.assertTableNotExists("django_migrations", using="other")
++        self.assertTableNotExists("migrations_author", using="other")
++        self.assertTableNotExists("migrations_tribble", using="other")
++
+     @override_settings(MIGRATION_MODULES={"migrations": "migrations.test_migrations"})
+     def test_migrate(self):
+         """
+2026-11-16 08:47:33,399 - INFO - Git diff changed after running eval script
+2026-11-16 08:47:33,399 - INFO - Attempting to stop container exec.eval.arm64.6b24dca158642bd6288384.55e28827f67f781ff3be26.4419531072...
+2026-11-16 08:47:48,652 - INFO - Attempting to remove container exec.eval.arm64.6b24dca158642bd6288384.55e28827f67f781ff3be26.4419531072...
+2026-11-16 08:47:48,690 - INFO - Container exec.eval.arm64.6b24dca158642bd6288384.55e28827f67f781ff3be26.4419531072 removed.
+2026-11-16 08:47:48,690 - WARNING - End of eval at 1794840468.690531

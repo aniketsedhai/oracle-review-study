@@ -1,0 +1,101 @@
+diff --git a/tests/admin_docs/test_utils.py b/tests/admin_docs/test_utils.py
+index 17ea912..1eaa17e 100644
+--- a/tests/admin_docs/test_utils.py
++++ b/tests/admin_docs/test_utils.py
+@@ -44,6 +44,41 @@ class TestUtils(AdminDocsSimpleTestCase):
+         )
+         self.assertEqual(trim_docstring_output, trimmed_docstring)
+ 
++    def test_trim_docstring_first_line_not_empty(self):
++        docstring = (
++            'test tests something.\n'
++            '    More text here.\n'
++            '    '
++        )
++        self.assertEqual(
++            trim_docstring(docstring),
++            'test tests something.\nMore text here.',
++        )
++
++    def test_trim_docstring_first_line_not_empty_with_common_indent(self):
++        docstring = (
++            'test tests something.\n'
++            '    More text here.\n'
++            '        Even more indented.\n'
++            '    '
++        )
++        self.assertEqual(
++            trim_docstring(docstring),
++            'test tests something.\nMore text here.\n    Even more indented.',
++        )
++
++    def test_parse_docstring_first_line_not_empty(self):
++        docstring = (
++            'test tests something.\n'
++            '\n'
++            '    Body text.\n'
++            '    '
++        )
++        title, description, metadata = parse_docstring(docstring)
++        self.assertEqual(title, 'test tests something.')
++        self.assertEqual(description, 'Body text.')
++        self.assertEqual(metadata, {})
++
+     def test_parse_docstring(self):
+         title, description, metadata = parse_docstring(self.docstring)
+         docstring_title = (
+diff --git a/tests/admin_docs/test_views.py b/tests/admin_docs/test_views.py
+index fb021f3..36ab7d5 100644
+--- a/tests/admin_docs/test_views.py
++++ b/tests/admin_docs/test_views.py
+@@ -75,6 +75,24 @@ class AdminDocViewTests(TestDataMixin, AdminDocsTestCase):
+         # View docstring
+         self.assertContains(response, 'Base view for admindocs views.')
+ 
++    def test_view_detail_docstring_starts_on_first_line(self):
++        url = reverse(
++            'django-admindocs-views-detail',
++            args=['admin_docs.views.docstring_starts_on_first_line'],
++        )
++        response = self.client.get(url)
++        self.assertEqual(response.status_code, 200)
++        self.assertContains(response, 'Docstring starts on the first line.')
++        self.assertContains(
++            response,
++            '<p>Body text with a <a class="reference external" '
++            'href="/admindocs/views/admin_docs.views.xview/">'
++            'admin_docs.views.xview</a> reference.</p>',
++            html=True,
++        )
++        self.assertNotContains(response, 'Error in "default-role" directive')
++        self.assertNotContains(response, 'System Message')
++
+     @override_settings(ROOT_URLCONF='admin_docs.namespace_urls')
+     def test_namespaced_view_detail(self):
+         url = reverse('django-admindocs-views-detail', args=['admin_docs.views.XViewClass'])
+diff --git a/tests/admin_docs/urls.py b/tests/admin_docs/urls.py
+index f535afc..a36e943 100644
+--- a/tests/admin_docs/urls.py
++++ b/tests/admin_docs/urls.py
+@@ -15,4 +15,5 @@ urlpatterns = [
+     path('xview/class/', views.xview_dec(views.XViewClass.as_view())),
+     path('xview/callable_object/', views.xview_dec(views.XViewCallableObject())),
+     path('xview/callable_object_without_xview/', views.XViewCallableObject()),
++    path('docstring_starts_on_first_line/', views.docstring_starts_on_first_line),
+ ]
+diff --git a/tests/admin_docs/views.py b/tests/admin_docs/views.py
+index 21fe382..4331341 100644
+--- a/tests/admin_docs/views.py
++++ b/tests/admin_docs/views.py
+@@ -18,3 +18,11 @@ class XViewClass(View):
+ class XViewCallableObject(View):
+     def __call__(self, request):
+         return HttpResponse()
++
++
++def docstring_starts_on_first_line(request):
++    """Docstring starts on the first line.
++
++    Body text with a :view:`admin_docs.views.xview` reference.
++    """
++    return HttpResponse()

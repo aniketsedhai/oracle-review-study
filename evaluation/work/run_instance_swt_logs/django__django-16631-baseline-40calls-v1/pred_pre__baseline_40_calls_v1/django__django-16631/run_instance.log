@@ -1,0 +1,155 @@
+2026-11-16 12:54:18,208 - WARNING - Starting evaluation at 1794855258.208732
+2026-11-16 12:54:18,271 - INFO - Creating container for django__django-16631...
+2026-11-16 12:54:18,314 - INFO - Container for django__django-16631 created: f9cca6916edd43b21ebe356b1aed74361abacd14f50c3a9d5db09d1f3da5ef0f
+2026-11-16 12:54:18,368 - INFO - Container for django__django-16631 started: f9cca6916edd43b21ebe356b1aed74361abacd14f50c3a9d5db09d1f3da5ef0f
+2026-11-16 12:54:18,914 - INFO - Git diff before:
+
+2026-11-16 12:54:18,914 - INFO - Eval script for django__django-16631 written to eval.sh, now applying to container...
+2026-11-16 12:54:21,937 - INFO - Test output for django__django-16631 written to run_instance_swt_logs/django__django-16631-baseline-40calls-v1/pred_pre__baseline_40_calls_v1/django__django-16631/test_output.txt
+2026-11-16 12:54:21,967 - INFO - Git diff after:
+diff --git a/tests/auth_tests/test_basic.py b/tests/auth_tests/test_basic.py
+index 4b491e521e..5885283131 100644
+--- a/tests/auth_tests/test_basic.py
++++ b/tests/auth_tests/test_basic.py
+@@ -138,3 +138,67 @@ class TestGetUser(TestCase):
+         user = get_user(request)
+         self.assertIsInstance(user, User)
+         self.assertEqual(user.username, created_user.username)
++
++
++class GetSessionAuthHashTests(TestCase):
++    def test_get_session_auth_hash_uses_secret_key(self):
++        user = User.objects.create_user("testuser", "test@example.com", "testpw")
++        with override_settings(SECRET_KEY="secret", SECRET_KEY_FALLBACKS=[]):
++            hash_with_secret = user.get_session_auth_hash()
++        with override_settings(SECRET_KEY="othersecret", SECRET_KEY_FALLBACKS=[]):
++            hash_with_other_secret = user.get_session_auth_hash()
++        self.assertNotEqual(hash_with_secret, hash_with_other_secret)
++
++    @override_settings(
++        SECRET_KEY="secret",
++        SECRET_KEY_FALLBACKS=["oldsecret"],
++    )
++    def test_get_session_auth_hash_secret_key_fallbacks(self):
++        user = User.objects.create_user("testuser", "test@example.com", "testpw")
++        with override_settings(SECRET_KEY="oldsecret", SECRET_KEY_FALLBACKS=[]):
++            hash_with_old_secret = user.get_session_auth_hash()
++        # The hash generated with the old secret key is still valid after
++        # rotating SECRET_KEY and moving the old value to SECRET_KEY_FALLBACKS.
++        self.assertEqual(user.get_session_auth_hash(), hash_with_old_secret)
++
++    @override_settings(
++        SECRET_KEY="secret",
++        SECRET_KEY_FALLBACKS=["oldsecret"],
++    )
++    def test_get_session_auth_hash_secret_key_fallbacks_removed(self):
++        user = User.objects.create_user("testuser", "test@example.com", "testpw")
++        with override_settings(SECRET_KEY="oldsecret", SECRET_KEY_FALLBACKS=[]):
++            hash_with_old_secret = user.get_session_auth_hash()
++        with override_settings(SECRET_KEY="secret", SECRET_KEY_FALLBACKS=[]):
++            self.assertNotEqual(user.get_session_auth_hash(), hash_with_old_secret)
++
++
++@override_settings(
++    AUTHENTICATION_BACKENDS=["django.contrib.auth.backends.ModelBackend"],
++)
++class SessionAuthHashFallbackTests(TestCase):
++    def test_session_survives_secret_key_rotation(self):
++        User.objects.create_user("testuser", "test@example.com", "testpw")
++        with override_settings(SECRET_KEY="oldsecret", SECRET_KEY_FALLBACKS=[]):
++            self.assertTrue(self.client.login(username="testuser", password="testpw"))
++            session_key = self.client.session.session_key
++        # Rotate the secret key, keeping the old one as a fallback.
++        with override_settings(
++            SECRET_KEY="newsecret", SECRET_KEY_FALLBACKS=["oldsecret"]
++        ):
++            request = HttpRequest()
++            request.session = self.client.session.__class__(session_key)
++            user = get_user(request)
++            self.assertIsInstance(user, User)
++            self.assertEqual(user.username, "testuser")
++
++    def test_session_invalidated_when_fallback_removed(self):
++        User.objects.create_user("testuser", "test@example.com", "testpw")
++        with override_settings(SECRET_KEY="oldsecret", SECRET_KEY_FALLBACKS=[]):
++            self.assertTrue(self.client.login(username="testuser", password="testpw"))
++            session_key = self.client.session.session_key
++        # The old secret key is no longer available.
++        with override_settings(SECRET_KEY="newsecret", SECRET_KEY_FALLBACKS=[]):
++            request = HttpRequest()
++            request.session = self.client.session.__class__(session_key)
++            self.assertIsInstance(get_user(request), AnonymousUser)
+diff --git a/tests/utils_tests/test_crypto.py b/tests/utils_tests/test_crypto.py
+index ed3ed25a9d..f46da1d2a4 100644
+--- a/tests/utils_tests/test_crypto.py
++++ b/tests/utils_tests/test_crypto.py
+@@ -1,7 +1,7 @@
+ import hashlib
+ import unittest
+ 
+-from django.test import SimpleTestCase
++from django.test import SimpleTestCase, override_settings
+ from django.utils.crypto import (
+     InvalidAlgorithm,
+     constant_time_compare,
+@@ -52,6 +52,55 @@ class TestUtilsCryptoMisc(SimpleTestCase):
+             with self.subTest(args=args, kwargs=kwargs):
+                 self.assertEqual(salted_hmac(*args, **kwargs).hexdigest(), digest)
+ 
++    @override_settings(
++        SECRET_KEY="secret",
++        SECRET_KEY_FALLBACKS=["oldsecret"],
++    )
++    def test_salted_hmac_secret_key_fallbacks(self):
++        # The current SECRET_KEY is used by default.
++        self.assertEqual(
++            salted_hmac("salt", "value").hexdigest(),
++            salted_hmac("salt", "value", secret="secret").hexdigest(),
++        )
++        # Fallback keys are used when no secret is provided.
++        self.assertEqual(
++            salted_hmac("salt", "value").hexdigest(),
++            salted_hmac("salt", "value", secret="oldsecret").hexdigest(),
++        )
++
++    @override_settings(
++        SECRET_KEY="secret",
++        SECRET_KEY_FALLBACKS=["oldsecret"],
++    )
++    def test_salted_hmac_secret_key_fallbacks_algorithm(self):
++        self.assertEqual(
++            salted_hmac("salt", "value", algorithm="sha256").hexdigest(),
++            salted_hmac(
++                "salt", "value", secret="oldsecret", algorithm="sha256"
++            ).hexdigest(),
++        )
++
++    @override_settings(
++        SECRET_KEY="secret",
++        SECRET_KEY_FALLBACKS=["oldsecret"],
++    )
++    def test_salted_hmac_explicit_secret_ignores_fallbacks(self):
++        self.assertEqual(
++            salted_hmac("salt", "value", secret="othersecret").hexdigest(),
++            salted_hmac("salt", "value", secret="othersecret").hexdigest(),
++        )
++        self.assertNotEqual(
++            salted_hmac("salt", "value", secret="othersecret").hexdigest(),
++            salted_hmac("salt", "value").hexdigest(),
++        )
++
++    @override_settings(SECRET_KEY="secret", SECRET_KEY_FALLBACKS=[])
++    def test_salted_hmac_no_secret_key_fallbacks(self):
++        self.assertEqual(
++            salted_hmac("salt", "value").hexdigest(),
++            salted_hmac("salt", "value", secret="secret").hexdigest(),
++        )
++
+     def test_invalid_algorithm(self):
+         msg = "'whatever' is not an algorithm accepted by the hashlib module."
+         with self.assertRaisesMessage(InvalidAlgorithm, msg):
+2026-11-16 12:54:21,967 - INFO - Git diff changed after running eval script
+2026-11-16 12:54:21,967 - INFO - Attempting to stop container exec.eval.arm64.9097b18874f4d0ac315ef2.9fe46469c62633c45bbc90.4967655488...
+2026-11-16 12:54:37,129 - INFO - Attempting to remove container exec.eval.arm64.9097b18874f4d0ac315ef2.9fe46469c62633c45bbc90.4967655488...
+2026-11-16 12:54:37,157 - INFO - Container exec.eval.arm64.9097b18874f4d0ac315ef2.9fe46469c62633c45bbc90.4967655488 removed.
+2026-11-16 12:54:37,157 - WARNING - End of eval at 1794855277.157644

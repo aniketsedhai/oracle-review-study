@@ -1,0 +1,95 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD 5f7a3a74aab1625c2bb65f643197ee885e3da576 >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff 5f7a3a74aab1625c2bb65f643197ee885e3da576
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install .
+git apply -v - <<'EOF_114329324912'
+diff --git a/test_requests.py b/test_requests.py
+index 137edc0..92efe2c 100755
+--- a/test_requests.py
++++ b/test_requests.py
+@@ -1739,3 +1739,69 @@ def test_vendor_aliases():
+ 
+ if __name__ == '__main__':
+     unittest.main()
++
++
++def test_prepare_binary_payload():
++    """A bytes payload must be passed through unchanged when preparing.
++
++    Regression test: preparing a request with a non-ASCII bytes body used to
++    raise a UnicodeDecodeError because the payload was run through
++    ``to_native_string`` (which assumes ASCII).
++    """
++    payload = u('ööö').encode('utf-8')
++    p = PreparedRequest()
++    p.prepare(
++        method='PUT',
++        url='http://www.example.com/put',
++        data=payload,
++        hooks=default_hooks()
++    )
++    assert p.body == payload
++
++
++def test_prepare_ascii_bytes_payload():
++    """ASCII bytes payloads are also passed through unchanged."""
++    payload = b'hello world'
++    p = PreparedRequest()
++    p.prepare(
++        method='POST',
++        url='http://www.example.com/post',
++        data=payload,
++        hooks=default_hooks()
++    )
++    assert p.body == payload
++
++
++def test_prepare_unicode_payload():
++    """A native (unicode) string payload is still accepted."""
++    payload = u('ööö')
++    p = PreparedRequest()
++    p.prepare(
++        method='PUT',
++        url='http://www.example.com/put',
++        data=payload,
++        hooks=default_hooks()
++    )
++    assert p.body == payload
++
++
++def test_encode_params_binary_payload():
++    """``_encode_params`` must not attempt to decode a bytes payload."""
++    payload = u('ööö').encode('utf-8')
++    assert PreparedRequest._encode_params(payload) == payload
++
++
++def test_binary_payload_put(httpbin):
++    """End-to-end: PUT with a binary payload succeeds."""
++    payload = u('ööö').encode('utf-8')
++    r = requests.put(httpbin('put'), data=payload)
++    assert r.status_code == 200
++    assert r.json()['data'] == u('ööö')
++
++
++def test_binary_payload_post(httpbin):
++    """End-to-end: POST with a binary payload succeeds."""
++    payload = u('ööö').encode('utf-8')
++    r = requests.post(httpbin('post'), data=payload)
++    assert r.status_code == 200
++    assert r.json()['data'] == u('ööö')
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(requests/models\.py)' -m pytest --no-header -rA  -p no:cacheprovider test_requests.py
+cat coverage.cover
+git checkout 5f7a3a74aab1625c2bb65f643197ee885e3da576
+git apply /root/pre_state.patch

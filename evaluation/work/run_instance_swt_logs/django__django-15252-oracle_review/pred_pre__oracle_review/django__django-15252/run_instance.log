@@ -1,0 +1,107 @@
+2026-11-16 02:46:32,119 - WARNING - Starting evaluation at 1794818792.1193018
+2026-11-16 02:47:13,474 - INFO - Creating container for django__django-15252...
+2026-11-16 02:47:13,537 - INFO - Container for django__django-15252 created: 9ec5977bec1539f129467fe869131b3d3ec8a99892e6449b3d7efd27dfdfcaae
+2026-11-16 02:47:13,628 - INFO - Container for django__django-15252 started: 9ec5977bec1539f129467fe869131b3d3ec8a99892e6449b3d7efd27dfdfcaae
+2026-11-16 02:47:14,122 - INFO - Git diff before:
+
+2026-11-16 02:47:14,123 - INFO - Eval script for django__django-15252 written to eval.sh, now applying to container...
+2026-11-16 02:47:17,192 - INFO - Test output for django__django-15252 written to run_instance_swt_logs/django__django-15252-oracle_review/pred_pre__oracle_review/django__django-15252/test_output.txt
+2026-11-16 02:47:17,220 - INFO - Git diff after:
+diff --git a/tests/migrations/test_loader.py b/tests/migrations/test_loader.py
+index 03a98506e3..22ada5d5f4 100644
+--- a/tests/migrations/test_loader.py
++++ b/tests/migrations/test_loader.py
+@@ -8,7 +8,7 @@ from django.db.migrations.exceptions import (
+ )
+ from django.db.migrations.loader import MigrationLoader
+ from django.db.migrations.recorder import MigrationRecorder
+-from django.test import TestCase, modify_settings, override_settings
++from django.test import TestCase, TransactionTestCase, modify_settings, override_settings
+ 
+ from .test_base import MigrationTestBase
+ 
+@@ -46,6 +46,79 @@ class RecorderTests(TestCase):
+         )
+ 
+ 
++class RecorderRouterTests(TransactionTestCase):
++    """
++    The migration recorder obeys the database router's allow_migrate() rules.
++    """
++    available_apps = ['migrations']
++    databases = {'default', 'other'}
++
++    def _drop_migrations_table(self, alias):
++        """Drop the django_migrations table on the given database."""
++        connection = connections[alias]
++        with connection.cursor() as cursor:
++            tables = connection.introspection.table_names(cursor)
++        if MigrationRecorder.Migration._meta.db_table in tables:
++            with connection.schema_editor() as editor:
++                editor.delete_model(MigrationRecorder.Migration)
++
++    def test_record_applied_skips_router_disallowed_database(self):
++        """
++        record_applied() doesn't create the django_migrations table on a
++        database where the router disallows migrating.
++        """
++        self._drop_migrations_table('other')
++        recorder = MigrationRecorder(connections['other'])
++        self.assertFalse(recorder.has_table())
++        with override_settings(DATABASE_ROUTERS=['migrations.routers.TestRouter']):
++            recorder.record_applied('myapp', '0432_ponies')
++        self.assertFalse(recorder.has_table())
++        self.assertEqual(recorder.applied_migrations(), {})
++
++    def test_record_unapplied_skips_router_disallowed_database(self):
++        """
++        record_unapplied() doesn't create the django_migrations table on a
++        database where the router disallows migrating.
++        """
++        self._drop_migrations_table('other')
++        recorder = MigrationRecorder(connections['other'])
++        self.assertFalse(recorder.has_table())
++        with override_settings(DATABASE_ROUTERS=['migrations.routers.TestRouter']):
++            recorder.record_unapplied('myapp', '0432_ponies')
++        self.assertFalse(recorder.has_table())
++
++    def test_ensure_schema_skips_router_disallowed_database(self):
++        """
++        ensure_schema() doesn't create the django_migrations table on a
++        database where the router disallows migrating.
++        """
++        self._drop_migrations_table('other')
++        recorder = MigrationRecorder(connections['other'])
++        self.assertFalse(recorder.has_table())
++        with override_settings(DATABASE_ROUTERS=['migrations.routers.TestRouter']):
++            recorder.ensure_schema()
++        self.assertFalse(recorder.has_table())
++
++    def test_record_applied_allowed_database(self):
++        """
++        The recorder still creates the table and records migrations on a
++        database where the router allows migrating.
++        """
++        self._drop_migrations_table('other')
++        recorder = MigrationRecorder(connections['other'])
++        self.assertFalse(recorder.has_table())
++        with override_settings(DATABASE_ROUTERS=['migrations.routers.DefaultOtherRouter']):
++            recorder.record_applied('myapp', '0432_ponies')
++        try:
++            self.assertTrue(recorder.has_table())
++            self.assertEqual(
++                {(x, y) for (x, y) in recorder.applied_migrations() if x == 'myapp'},
++                {('myapp', '0432_ponies')},
++            )
++        finally:
++            recorder.record_unapplied('myapp', '0432_ponies')
++
++
+ class LoaderTests(TestCase):
+     """
+     Tests the disk and database loader, and running through migrations
+2026-11-16 02:47:17,220 - INFO - Git diff changed after running eval script
+2026-11-16 02:47:17,220 - INFO - Attempting to stop container exec.eval.arm64.6b24dca158642bd6288384.55e28827f67f781ff3be26.4536384976...
+2026-11-16 02:47:32,336 - INFO - Attempting to remove container exec.eval.arm64.6b24dca158642bd6288384.55e28827f67f781ff3be26.4536384976...
+2026-11-16 02:47:32,360 - INFO - Container exec.eval.arm64.6b24dca158642bd6288384.55e28827f67f781ff3be26.4536384976 removed.
+2026-11-16 02:47:32,361 - WARNING - End of eval at 1794818852.361024

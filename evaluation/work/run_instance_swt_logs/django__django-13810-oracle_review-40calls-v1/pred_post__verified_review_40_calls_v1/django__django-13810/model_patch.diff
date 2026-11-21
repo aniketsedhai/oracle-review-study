@@ -1,0 +1,54 @@
+diff --git a/tests/middleware_exceptions/middleware.py b/tests/middleware_exceptions/middleware.py
+index 9fb9726..ad7cb4b 100644
+--- a/tests/middleware_exceptions/middleware.py
++++ b/tests/middleware_exceptions/middleware.py
+@@ -1,3 +1,4 @@
++from django.core.exceptions import MiddlewareNotUsed
+ from django.http import Http404, HttpResponse
+ from django.template import engines
+ from django.template.response import TemplateResponse
+@@ -130,3 +131,14 @@ class NotSyncOrAsyncMiddleware(BaseMiddleware):
+ 
+     def __call__(self, request):
+         return self.get_response(request)
++
++
++class SyncMiddlewareNotUsed(BaseMiddleware):
++    """Synchronous middleware that is not used."""
++    async_capable = False
++
++    def __init__(self, get_response):
++        raise MiddlewareNotUsed
++
++    def __call__(self, request):
++        return self.get_response(request)
+diff --git a/tests/middleware_exceptions/tests.py b/tests/middleware_exceptions/tests.py
+index 8b019ba..39894ea 100644
+--- a/tests/middleware_exceptions/tests.py
++++ b/tests/middleware_exceptions/tests.py
+@@ -282,6 +282,25 @@ class MiddlewareSyncAsyncTests(SimpleTestCase):
+         self.assertEqual(response.content, b'OK')
+         self.assertEqual(response.status_code, 200)
+ 
++    @override_settings(MIDDLEWARE=[
++        'middleware_exceptions.middleware.SyncMiddlewareNotUsed',
++        'middleware_exceptions.middleware.async_payment_middleware',
++    ])
++    async def test_sync_middleware_not_used_async(self):
++        # A synchronous middleware raising MiddlewareNotUsed must not poison
++        # the rest of the middleware chain in an async context (#32334).
++        response = await self.async_client.get('/middleware_exceptions/view/')
++        self.assertEqual(response.status_code, 402)
++
++    @override_settings(MIDDLEWARE=[
++        'middleware_exceptions.middleware.SyncMiddlewareNotUsed',
++        'middleware_exceptions.middleware.PaymentMiddleware',
++    ])
++    def test_sync_middleware_not_used_sync(self):
++        response = self.client.get('/middleware_exceptions/view/')
++        self.assertEqual(response.status_code, 402)
++        self.assertEqual(response.content, b'OK')
++
+ 
+ @override_settings(ROOT_URLCONF='middleware_exceptions.urls')
+ class AsyncMiddlewareTests(SimpleTestCase):

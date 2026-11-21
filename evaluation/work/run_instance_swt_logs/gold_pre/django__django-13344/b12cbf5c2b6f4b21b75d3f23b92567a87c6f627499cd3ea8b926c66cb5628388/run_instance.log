@@ -1,0 +1,260 @@
+2026-11-16 01:54:40,223 - WARNING - Starting evaluation at 1794815680.223444
+2026-11-16 01:54:40,289 - INFO - Creating container for django__django-13344...
+2026-11-16 01:54:40,316 - INFO - Container for django__django-13344 created: c139c838ca155cc9fe58ac44d193cea55520a13be23b71307501e05ff04b99b2
+2026-11-16 01:54:40,390 - INFO - Container for django__django-13344 started: c139c838ca155cc9fe58ac44d193cea55520a13be23b71307501e05ff04b99b2
+2026-11-16 01:54:40,986 - INFO - Git diff before:
+
+2026-11-16 01:54:40,986 - INFO - Eval script for django__django-13344 written to eval.sh, now applying to container...
+2026-11-16 01:55:57,096 - INFO - Test output for django__django-13344 written to run_instance_swt_logs/gold_pre/django__django-13344/b12cbf5c2b6f4b21b75d3f23b92567a87c6f627499cd3ea8b926c66cb5628388/test_output.txt
+2026-11-16 01:55:57,129 - INFO - Git diff after:
+diff --git a/tests/cache/tests.py b/tests/cache/tests.py
+index 865f0cefc8..c26183f5b2 100644
+--- a/tests/cache/tests.py
++++ b/tests/cache/tests.py
+@@ -2083,6 +2083,7 @@ class CacheMiddlewareTest(SimpleTestCase):
+         self.assertEqual(middleware.cache_timeout, 30)
+         self.assertEqual(middleware.key_prefix, 'middlewareprefix')
+         self.assertEqual(middleware.cache_alias, 'other')
++        self.assertEqual(middleware.cache, self.other_cache)
+ 
+         # If more arguments are being passed in construction, it's being used
+         # as a decorator. First, test with "defaults":
+@@ -2092,6 +2093,7 @@ class CacheMiddlewareTest(SimpleTestCase):
+         self.assertEqual(as_view_decorator.key_prefix, '')
+         # Value of DEFAULT_CACHE_ALIAS from django.core.cache
+         self.assertEqual(as_view_decorator.cache_alias, 'default')
++        self.assertEqual(as_view_decorator.cache, self.default_cache)
+ 
+         # Next, test with custom values:
+         as_view_decorator_with_custom = CacheMiddleware(
+@@ -2101,6 +2103,21 @@ class CacheMiddlewareTest(SimpleTestCase):
+         self.assertEqual(as_view_decorator_with_custom.cache_timeout, 60)
+         self.assertEqual(as_view_decorator_with_custom.key_prefix, 'foo')
+         self.assertEqual(as_view_decorator_with_custom.cache_alias, 'other')
++        self.assertEqual(as_view_decorator_with_custom.cache, self.other_cache)
++
++    def test_update_cache_middleware_constructor(self):
++        middleware = UpdateCacheMiddleware(empty_response)
++        self.assertEqual(middleware.cache_timeout, 30)
++        self.assertIsNone(middleware.page_timeout)
++        self.assertEqual(middleware.key_prefix, 'middlewareprefix')
++        self.assertEqual(middleware.cache_alias, 'other')
++        self.assertEqual(middleware.cache, self.other_cache)
++
++    def test_fetch_cache_middleware_constructor(self):
++        middleware = FetchFromCacheMiddleware(empty_response)
++        self.assertEqual(middleware.key_prefix, 'middlewareprefix')
++        self.assertEqual(middleware.cache_alias, 'other')
++        self.assertEqual(middleware.cache, self.other_cache)
+ 
+     def test_middleware(self):
+         middleware = CacheMiddleware(hello_world_view)
+diff --git a/tests/deprecation/test_middleware_mixin.py b/tests/deprecation/test_middleware_mixin.py
+index c90aeb8360..4f410a77c8 100644
+--- a/tests/deprecation/test_middleware_mixin.py
++++ b/tests/deprecation/test_middleware_mixin.py
+@@ -1,15 +1,31 @@
++import asyncio
+ import threading
+ 
+ from asgiref.sync import async_to_sync
+ 
++from django.contrib.admindocs.middleware import XViewMiddleware
++from django.contrib.auth.middleware import (
++    AuthenticationMiddleware, RemoteUserMiddleware,
++)
++from django.contrib.flatpages.middleware import FlatpageFallbackMiddleware
++from django.contrib.messages.middleware import MessageMiddleware
++from django.contrib.redirects.middleware import RedirectFallbackMiddleware
+ from django.contrib.sessions.middleware import SessionMiddleware
++from django.contrib.sites.middleware import CurrentSiteMiddleware
+ from django.db import connection
+ from django.http.request import HttpRequest
+ from django.http.response import HttpResponse
+ from django.middleware.cache import (
+     CacheMiddleware, FetchFromCacheMiddleware, UpdateCacheMiddleware,
+ )
+-from django.middleware.common import CommonMiddleware
++from django.middleware.clickjacking import XFrameOptionsMiddleware
++from django.middleware.common import (
++    BrokenLinkEmailsMiddleware, CommonMiddleware,
++)
++from django.middleware.csrf import CsrfViewMiddleware
++from django.middleware.gzip import GZipMiddleware
++from django.middleware.http import ConditionalGetMiddleware
++from django.middleware.locale import LocaleMiddleware
+ from django.middleware.security import SecurityMiddleware
+ from django.test import SimpleTestCase
+ from django.utils.deprecation import MiddlewareMixin, RemovedInDjango40Warning
+@@ -20,30 +36,57 @@ class MiddlewareMixinTests(SimpleTestCase):
+     Deprecation warning is raised when using get_response=None.
+     """
+     msg = 'Passing None for the middleware get_response argument is deprecated.'
++    middlewares = [
++        AuthenticationMiddleware,
++        BrokenLinkEmailsMiddleware,
++        CacheMiddleware,
++        CommonMiddleware,
++        ConditionalGetMiddleware,
++        CsrfViewMiddleware,
++        CurrentSiteMiddleware,
++        FetchFromCacheMiddleware,
++        FlatpageFallbackMiddleware,
++        GZipMiddleware,
++        LocaleMiddleware,
++        MessageMiddleware,
++        RedirectFallbackMiddleware,
++        RemoteUserMiddleware,
++        SecurityMiddleware,
++        SessionMiddleware,
++        UpdateCacheMiddleware,
++        XFrameOptionsMiddleware,
++        XViewMiddleware,
++    ]
+ 
+     def test_deprecation(self):
+-        with self.assertRaisesMessage(RemovedInDjango40Warning, self.msg):
+-            CommonMiddleware()
++        for middleware in self.middlewares:
++            with self.subTest(middleware=middleware):
++                with self.assertRaisesMessage(RemovedInDjango40Warning, self.msg):
++                    middleware()
+ 
+     def test_passing_explicit_none(self):
+-        with self.assertRaisesMessage(RemovedInDjango40Warning, self.msg):
+-            CommonMiddleware(None)
+-
+-    def test_subclass_deprecation(self):
+-        """
+-        Deprecation warning is raised in subclasses overriding __init__()
+-        without calling super().
+-        """
+-        for middleware in [
+-            SessionMiddleware,
+-            CacheMiddleware,
+-            FetchFromCacheMiddleware,
+-            UpdateCacheMiddleware,
+-            SecurityMiddleware,
+-        ]:
++        for middleware in self.middlewares:
+             with self.subTest(middleware=middleware):
+                 with self.assertRaisesMessage(RemovedInDjango40Warning, self.msg):
+-                    middleware()
++                    middleware(None)
++
++    def test_coroutine(self):
++        async def async_get_response(request):
++            return HttpResponse()
++
++        def sync_get_response(request):
++            return HttpResponse()
++
++        for middleware in self.middlewares:
++            with self.subTest(middleware=middleware.__qualname__):
++                # Middleware appears as coroutine if get_function is
++                # a coroutine.
++                middleware_instance = middleware(async_get_response)
++                self.assertIs(asyncio.iscoroutinefunction(middleware_instance), True)
++                # Middleware doesn't appear as coroutine if get_function is not
++                # a coroutine.
++                middleware_instance = middleware(sync_get_response)
++                self.assertIs(asyncio.iscoroutinefunction(middleware_instance), False)
+ 
+     def test_sync_to_async_uses_base_thread_and_connection(self):
+         """
+diff --git a/tests/runtests.py b/tests/runtests.py
+index db32da13eb..db1fd65dd2 100755
+--- a/tests/runtests.py
++++ b/tests/runtests.py
+@@ -90,8 +90,9 @@ ALWAYS_MIDDLEWARE = [
+ # avoid "RuntimeError: Model class X doesn't declare an explicit app_label
+ # and isn't in an application in INSTALLED_APPS."
+ CONTRIB_TESTS_TO_APPS = {
+-    'flatpages_tests': 'django.contrib.flatpages',
+-    'redirects_tests': 'django.contrib.redirects',
++    'deprecation': ['django.contrib.flatpages', 'django.contrib.redirects'],
++    'flatpages_tests': ['django.contrib.flatpages'],
++    'redirects_tests': ['django.contrib.redirects'],
+ }
+ 
+ 
+@@ -228,7 +229,9 @@ def setup(verbosity, test_labels, parallel, start_at, start_after):
+         )
+ 
+         if module_name in CONTRIB_TESTS_TO_APPS and module_found_in_labels:
+-            settings.INSTALLED_APPS.append(CONTRIB_TESTS_TO_APPS[module_name])
++            for contrib_app in CONTRIB_TESTS_TO_APPS[module_name]:
++                if contrib_app not in settings.INSTALLED_APPS:
++                    settings.INSTALLED_APPS.append(contrib_app)
+ 
+         if module_found_in_labels and module_label not in installed_app_names:
+             if verbosity >= 2:
+2026-11-16 01:55:57,129 - INFO - Git diff changed after running eval script
+2026-11-16 01:55:57,129 - INFO - Attempting to stop container exec.eval.arm64.f904a9d2e0f61fc0d70077.700997aa701c707339e038.4339920160...
+2026-11-16 01:56:12,311 - INFO - Attempting to remove container exec.eval.arm64.f904a9d2e0f61fc0d70077.700997aa701c707339e038.4339920160...
+2026-11-16 01:56:12,335 - INFO - Container exec.eval.arm64.f904a9d2e0f61fc0d70077.700997aa701c707339e038.4339920160 removed.
+2026-11-16 01:56:12,335 - WARNING - End of eval at 1794815772.3359098
+2026-11-16 06:58:40,999 - WARNING - Starting evaluation at 1794833920.999259
+2026-11-16 06:58:41,005 - WARNING - Starting evaluation at 1794833921.005111
+2026-11-16 06:58:41,010 - WARNING - Starting evaluation at 1794833921.0102248
+2026-11-16 06:58:41,069 - INFO - Creating container for django__django-13344...
+2026-11-16 06:58:41,093 - INFO - Container for django__django-13344 created: 7a262c0972df28ebd6d567205df7bcc80e47099709271b683d0f4b2c0228ebe4
+2026-11-16 06:58:41,143 - INFO - Container for django__django-13344 started: 7a262c0972df28ebd6d567205df7bcc80e47099709271b683d0f4b2c0228ebe4
+2026-11-16 06:58:41,487 - INFO - Git diff before:
+
+2026-11-16 06:58:41,488 - INFO - Eval script for django__django-13344 written to eval.sh, now applying to container...
+2026-11-16 06:58:44,266 - INFO - Test output for django__django-13344 written to run_instance_swt_logs/base_pre/django__django-13344/93e8b5cddbb83021264266227e51751f4456ad74aa80c02b3f434cd9a93b046d/test_output.txt
+2026-11-16 06:58:44,289 - INFO - Git diff after:
+
+2026-11-16 06:58:44,289 - INFO - Attempting to stop container exec.eval.arm64.f904a9d2e0f61fc0d70077.700997aa701c707339e038.4409775872...
+2026-11-16 06:58:59,412 - INFO - Attempting to remove container exec.eval.arm64.f904a9d2e0f61fc0d70077.700997aa701c707339e038.4409775872...
+2026-11-16 06:58:59,433 - INFO - Container exec.eval.arm64.f904a9d2e0f61fc0d70077.700997aa701c707339e038.4409775872 removed.
+2026-11-16 06:58:59,433 - WARNING - End of eval at 1794833939.43328
+2026-11-16 08:36:25,270 - WARNING - Starting evaluation at 1794839785.2702231
+2026-11-16 08:36:25,275 - WARNING - Starting evaluation at 1794839785.275724
+2026-11-16 08:36:25,281 - WARNING - Starting evaluation at 1794839785.2818
+2026-11-16 08:36:25,344 - INFO - Creating container for django__django-13344...
+2026-11-16 08:36:25,365 - INFO - Container for django__django-13344 created: e6c2a1f9b1fd8c5a81c27c9acc14c5f87efb9618c350e4ab276ecdb70d2597e5
+2026-11-16 08:36:25,413 - INFO - Container for django__django-13344 started: e6c2a1f9b1fd8c5a81c27c9acc14c5f87efb9618c350e4ab276ecdb70d2597e5
+2026-11-16 08:36:25,723 - INFO - Git diff before:
+
+2026-11-16 08:36:25,724 - INFO - Eval script for django__django-13344 written to eval.sh, now applying to container...
+2026-11-16 08:36:28,522 - INFO - Test output for django__django-13344 written to run_instance_swt_logs/base_pre/django__django-13344/a292c3991fd4733811972a218ddb23bdf46af2361fefd98139292ced478c62ef/test_output.txt
+2026-11-16 08:36:28,543 - INFO - Git diff after:
+
+2026-11-16 08:36:28,543 - INFO - Attempting to stop container exec.eval.arm64.f904a9d2e0f61fc0d70077.700997aa701c707339e038.4447298448...
+2026-11-16 08:36:43,706 - INFO - Attempting to remove container exec.eval.arm64.f904a9d2e0f61fc0d70077.700997aa701c707339e038.4447298448...
+2026-11-16 08:36:43,731 - INFO - Container exec.eval.arm64.f904a9d2e0f61fc0d70077.700997aa701c707339e038.4447298448 removed.
+2026-11-16 08:36:43,731 - WARNING - End of eval at 1794839803.731869
+2026-11-16 12:26:02,552 - WARNING - Starting evaluation at 1794853562.552126
+2026-11-16 12:26:02,559 - WARNING - Starting evaluation at 1794853562.559735
+2026-11-16 12:26:02,566 - WARNING - Starting evaluation at 1794853562.566675
+2026-11-16 12:26:02,633 - INFO - Creating container for django__django-13344...
+2026-11-16 12:26:02,662 - INFO - Container for django__django-13344 created: ba0b98e77af721e559cf9ee965a50e998f0908e7c01837eb16fda85d33fa5844
+2026-11-16 12:26:02,707 - INFO - Container for django__django-13344 started: ba0b98e77af721e559cf9ee965a50e998f0908e7c01837eb16fda85d33fa5844
+2026-11-16 12:26:03,015 - INFO - Git diff before:
+
+2026-11-16 12:26:03,016 - INFO - Eval script for django__django-13344 written to eval.sh, now applying to container...
+2026-11-16 12:26:05,957 - INFO - Test output for django__django-13344 written to run_instance_swt_logs/base_pre/django__django-13344/c708342b32b5c658a88df3bc34c4e60b94bed39c92163e9c88469a4616af1158/test_output.txt
+2026-11-16 12:26:05,978 - INFO - Git diff after:
+
+2026-11-16 12:26:05,979 - INFO - Attempting to stop container exec.eval.arm64.f904a9d2e0f61fc0d70077.700997aa701c707339e038.4876426688...
+2026-11-16 12:26:21,103 - INFO - Attempting to remove container exec.eval.arm64.f904a9d2e0f61fc0d70077.700997aa701c707339e038.4876426688...
+2026-11-16 12:26:21,121 - INFO - Container exec.eval.arm64.f904a9d2e0f61fc0d70077.700997aa701c707339e038.4876426688 removed.
+2026-11-16 12:26:21,123 - WARNING - End of eval at 1794853581.123123
+2026-11-16 12:27:48,386 - WARNING - Starting evaluation at 1794853668.3861709
+2026-11-16 12:27:48,393 - WARNING - Starting evaluation at 1794853668.393892
+2026-11-16 12:27:48,401 - WARNING - Starting evaluation at 1794853668.4016051
+2026-11-16 12:27:48,469 - INFO - Creating container for django__django-13344...
+2026-11-16 12:27:48,490 - INFO - Container for django__django-13344 created: 5e8a7f4a9f3e51b483742a4d3fea5ed915d3bd3c70a76fbaca04ee622d787765
+2026-11-16 12:27:48,538 - INFO - Container for django__django-13344 started: 5e8a7f4a9f3e51b483742a4d3fea5ed915d3bd3c70a76fbaca04ee622d787765
+2026-11-16 12:27:48,867 - INFO - Git diff before:
+
+2026-11-16 12:27:48,869 - INFO - Eval script for django__django-13344 written to eval.sh, now applying to container...
+2026-11-16 12:27:51,558 - INFO - Test output for django__django-13344 written to run_instance_swt_logs/base_pre/django__django-13344/5edf46c68e356a561455fd046c124df186cc7e65cdd056f4642d7efdeac340be/test_output.txt
+2026-11-16 12:27:51,582 - INFO - Git diff after:
+
+2026-11-16 12:27:51,582 - INFO - Attempting to stop container exec.eval.arm64.f904a9d2e0f61fc0d70077.700997aa701c707339e038.4558318592...
+2026-11-16 12:28:06,664 - INFO - Attempting to remove container exec.eval.arm64.f904a9d2e0f61fc0d70077.700997aa701c707339e038.4558318592...
+2026-11-16 12:28:06,681 - INFO - Container exec.eval.arm64.f904a9d2e0f61fc0d70077.700997aa701c707339e038.4558318592 removed.
+2026-11-16 12:28:06,681 - WARNING - End of eval at 1794853686.681568

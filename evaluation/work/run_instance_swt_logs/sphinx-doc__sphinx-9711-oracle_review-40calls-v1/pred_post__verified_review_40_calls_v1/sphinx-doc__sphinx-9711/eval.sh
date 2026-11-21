@@ -1,0 +1,130 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD 81a4fd973d4cfcb25d01a7b0be62cdb28f82406d >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff 81a4fd973d4cfcb25d01a7b0be62cdb28f82406d
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .[test]
+git apply -v - <<'EOF_114329324912'
+diff --git a/sphinx/extension.py b/sphinx/extension.py
+--- a/sphinx/extension.py
++++ b/sphinx/extension.py
+@@ -10,6 +10,8 @@
+ 
+ from typing import TYPE_CHECKING, Any, Dict
+ 
++from packaging.version import InvalidVersion, Version
++
+ from sphinx.config import Config
+ from sphinx.errors import VersionRequirementError
+ from sphinx.locale import __
+@@ -51,7 +53,18 @@ def verify_needs_extensions(app: "Sphinx", config: Config) -> None:
+                               'but it is not loaded.'), extname)
+             continue
+ 
+-        if extension.version == 'unknown version' or reqversion > extension.version:
++        fulfilled = True
++        if extension.version == 'unknown version':
++            fulfilled = False
++        else:
++            try:
++                if Version(reqversion) > Version(extension.version):
++                    fulfilled = False
++            except InvalidVersion:
++                if reqversion > extension.version:
++                    fulfilled = False
++
++        if not fulfilled:
+             raise VersionRequirementError(__('This project needs the extension %s at least in '
+                                              'version %s and therefore cannot be built with '
+                                              'the loaded version (%s).') %
+
+EOF_114329324912
+git apply -v - <<'EOF_114329324912'
+diff --git a/tests/test_config.py b/tests/test_config.py
+index 717e865..5c075b6 100644
+--- a/tests/test_config.py
++++ b/tests/test_config.py
+@@ -390,3 +390,69 @@ def test_nitpick_ignore_regex_fullmatch(app, status, warning):
+     assert len(warning) == len(nitpick_warnings)
+     for actual, expected in zip(warning, nitpick_warnings):
+         assert expected in actual
++
++
++@pytest.mark.sphinx('html', testroot='basic')
++def test_needs_extensions(make_app, tempdir):
++    # dummy extension with a version
++    (tempdir / 'dummy_ext.py').write_text(
++        'def setup(app):\n'
++        '    return {"version": "0.10.0"}\n'
++    )
++    (tempdir / 'conf.py').write_text(
++        'import sys\n'
++        'sys.path.insert(0, %r)\n'
++        'extensions = ["dummy_ext"]\n'
++        'needs_extensions = {"dummy_ext": "0.6.0"}\n' % str(tempdir)
++    )
++
++    # 0.10.0 should be considered newer than 0.6.0 (numeric, not string,
++    # comparison)
++    app = make_app(srcdir=tempdir)
++    assert app.config.needs_extensions == {'dummy_ext': '0.6.0'}
++    assert 'cannot be built with the loaded version' not in app._warning.getvalue()
++
++
++@pytest.mark.sphinx('html', testroot='basic')
++def test_needs_extensions_too_old(make_app, tempdir):
++    (tempdir / 'dummy_ext.py').write_text(
++        'def setup(app):\n'
++        '    return {"version": "0.6.0"}\n'
++    )
++    (tempdir / 'conf.py').write_text(
++        'import sys\n'
++        'sys.path.insert(0, %r)\n'
++        'extensions = ["dummy_ext"]\n'
++        'needs_extensions = {"dummy_ext": "0.10.0"}\n' % str(tempdir)
++    )
++
++    with pytest.raises(VersionRequirementError):
++        make_app(srcdir=tempdir)
++
++
++@pytest.mark.sphinx('html', testroot='basic')
++def test_needs_extensions_equal(make_app, tempdir):
++    (tempdir / 'dummy_ext.py').write_text(
++        'def setup(app):\n'
++        '    return {"version": "0.10.0"}\n'
++    )
++    (tempdir / 'conf.py').write_text(
++        'import sys\n'
++        'sys.path.insert(0, %r)\n'
++        'extensions = ["dummy_ext"]\n'
++        'needs_extensions = {"dummy_ext": "0.10.0"}\n' % str(tempdir)
++    )
++
++    app = make_app(srcdir=tempdir)
++    assert app.config.needs_extensions == {'dummy_ext': '0.10.0'}
++    assert 'cannot be built with the loaded version' not in app._warning.getvalue()
++
++
++@pytest.mark.sphinx('html', testroot='basic')
++def test_needs_extensions_not_loaded(make_app, tempdir):
++    (tempdir / 'conf.py').write_text(
++        'needs_extensions = {"dummy_ext": "0.6.0"}\n'
++    )
++
++    app = make_app(srcdir=tempdir)
++    assert 'dummy_ext extension is required by needs_extensions settings' in app._warning.getvalue()
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(sphinx/extension\.py)' -m tox -epy39 -v -- tests/test_config.py
+cat coverage.cover
+git checkout 81a4fd973d4cfcb25d01a7b0be62cdb28f82406d
+git apply /root/pre_state.patch

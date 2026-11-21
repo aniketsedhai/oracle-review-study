@@ -1,0 +1,43 @@
+diff --git a/tests/test_domain_py.py b/tests/test_domain_py.py
+index e0c6905..ba81bfd 100644
+--- a/tests/test_domain_py.py
++++ b/tests/test_domain_py.py
+@@ -929,3 +929,38 @@ def test_warn_missing_reference(app, status, warning):
+     assert 'index.rst:6: WARNING: undefined label: no-label' in warning.getvalue()
+     assert ('index.rst:6: WARNING: Failed to create a cross reference. A title or caption not found: existing-label'
+             in warning.getvalue())
++
++
++@pytest.mark.sphinx('dummy', testroot='domain-py')
++def test_domain_py_find_obj_does_not_match_unrelated_attributes(app, status, warning):
++    """Instance variables must not link to unrelated variables of the same name.
++
++    Regression test: a class attribute ``Foo.limit`` must not be resolved to a
++    global ``limit`` (or to ``Bar.limit``) merely because they share a name.
++    """
++    from sphinx.domains.python import ObjectEntry
++
++    app.builder.build_all()
++    domain = app.env.domains['py']
++    domain.data['objects'] = {
++        'limit': ObjectEntry('doc', 'limit', 'data', False),
++        'Foo': ObjectEntry('doc', 'Foo', 'class', False),
++        'Foo.limit': ObjectEntry('doc', 'Foo.limit', 'attribute', False),
++        'Bar': ObjectEntry('doc', 'Bar', 'class', False),
++        'Bar.limit': ObjectEntry('doc', 'Bar.limit', 'attribute', False),
++    }
++
++    def find_obj(modname, classname, name, objtype, searchmode=1):
++        return domain.find_obj(app.env, modname, classname, name, objtype, searchmode)
++
++    # With a class context, the attribute of that class must be preferred and
++    # must not be confused with the global variable or another class's attribute.
++    assert find_obj(None, 'Foo', 'limit', 'attr') == [
++        ('Foo.limit', ObjectEntry('doc', 'Foo.limit', 'attribute', False))]
++    assert find_obj(None, 'Bar', 'limit', 'attr') == [
++        ('Bar.limit', ObjectEntry('doc', 'Bar.limit', 'attribute', False))]
++
++    # Without a class context, the global variable must be preferred over the
++    # unrelated class attributes.
++    assert find_obj(None, None, 'limit', 'attr') == [
++        ('limit', ObjectEntry('doc', 'limit', 'data', False))]

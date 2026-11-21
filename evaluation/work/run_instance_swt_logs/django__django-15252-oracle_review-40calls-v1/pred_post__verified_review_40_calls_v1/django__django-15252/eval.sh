@@ -1,0 +1,235 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD 361bb8f786f112ee275be136795c0b1ecefff928 >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff 361bb8f786f112ee275be136795c0b1ecefff928
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .
+git apply -v - <<'EOF_114329324912'
+diff --git a/django/db/migrations/executor.py b/django/db/migrations/executor.py
+--- a/django/db/migrations/executor.py
++++ b/django/db/migrations/executor.py
+@@ -96,8 +96,12 @@ def migrate(self, targets, plan=None, state=None, fake=False, fake_initial=False
+         (un)applied and in a second step run all the database operations.
+         """
+         # The django_migrations table must be present to record applied
+-        # migrations.
+-        self.recorder.ensure_schema()
++        # migrations, but don't create it if there are no migrations to apply.
++        if plan == []:
++            if not self.recorder.has_table():
++                return self._create_project_state(with_applied_migrations=False)
++        else:
++            self.recorder.ensure_schema()
+ 
+         if plan is None:
+             plan = self.migration_plan(targets)
+
+EOF_114329324912
+git apply -v - <<'EOF_114329324912'
+diff --git a/tests/migrations/test_executor.py b/tests/migrations/test_executor.py
+index ca2c03c..20f3d2f 100644
+--- a/tests/migrations/test_executor.py
++++ b/tests/migrations/test_executor.py
+@@ -1,7 +1,7 @@
+ from unittest import mock
+ 
+ from django.apps.registry import apps as global_apps
+-from django.db import DatabaseError, connection, migrations, models
++from django.db import DatabaseError, connection, connections, migrations, models
+ from django.db.migrations.exceptions import InvalidMigrationPlan
+ from django.db.migrations.executor import MigrationExecutor
+ from django.db.migrations.graph import MigrationGraph
+@@ -15,6 +15,16 @@ from django.test.utils import isolate_lru_cache
+ from .test_base import MigrationTestBase
+ 
+ 
++class MigrateNothingRouter:
++    def allow_migrate(self, db, app_label, **hints):
++        return False
++
++
++class MigrateEverythingRouter:
++    def allow_migrate(self, db, app_label, **hints):
++        return True
++
++
+ @modify_settings(INSTALLED_APPS={'append': 'migrations2'})
+ class ExecutorTests(MigrationTestBase):
+     """
+@@ -26,6 +36,12 @@ class ExecutorTests(MigrationTestBase):
+ 
+     available_apps = ["migrations", "migrations2", "django.contrib.auth", "django.contrib.contenttypes"]
+ 
++    def _drop_migrations_table(self, recorder):
++        """Simulate a database where the django_migrations table is absent."""
++        if recorder.has_table():
++            with recorder.connection.schema_editor() as editor:
++                editor.delete_model(recorder.Migration)
++
+     @override_settings(MIGRATION_MODULES={"migrations": "migrations.test_migrations"})
+     def test_run(self):
+         """
+@@ -640,6 +656,41 @@ class ExecutorTests(MigrationTestBase):
+             self.assertTableNotExists("book_app_book")
+             executor.migrate([("author_app", None)], fake=True)
+ 
++    @override_settings(
++        MIGRATION_MODULES={"migrations": "migrations.test_migrations"},
++        DATABASE_ROUTERS=[MigrateNothingRouter()],
++    )
++    def test_migrate_skipped_when_router_disallows_migrating(self):
++        """
++        The django_migrations table isn't created on a database where the
++        router disallows migrating.
++        """
++        recorder = MigrationRecorder(connections['other'])
++        self._drop_migrations_table(recorder)
++        self.assertFalse(recorder.has_table())
++        executor = MigrationExecutor(connections['other'])
++        executor.migrate([("migrations", "0002_second")])
++        self.assertFalse(recorder.has_table())
++        self.assertEqual(recorder.applied_migrations(), {})
++        self.assertTableNotExists("migrations_pony", using='other')
++
++    @override_settings(
++        MIGRATION_MODULES={"migrations": "migrations.test_migrations"},
++        DATABASE_ROUTERS=[MigrateEverythingRouter()],
++    )
++    def test_migrate_recorded_when_router_allows_migrating(self):
++        """
++        The django_migrations table is created and migrations are recorded on
++        a database where the router allows migrating.
++        """
++        recorder = MigrationRecorder(connections['other'])
++        self._drop_migrations_table(recorder)
++        self.assertFalse(recorder.has_table())
++        executor = MigrationExecutor(connections['other'])
++        executor.migrate([("migrations", "0002_second")])
++        self.assertTrue(recorder.has_table())
++        self.assertIn(("migrations", "0002_second"), recorder.applied_migrations())
++
+     @override_settings(MIGRATION_MODULES={"migrations": "migrations.test_migrations_squashed"})
+     def test_apply_all_replaced_marks_replacement_as_applied(self):
+         """
+diff --git a/tests/migrations/test_loader.py b/tests/migrations/test_loader.py
+index 03a9850..6914d54 100644
+--- a/tests/migrations/test_loader.py
++++ b/tests/migrations/test_loader.py
+@@ -8,17 +8,39 @@ from django.db.migrations.exceptions import (
+ )
+ from django.db.migrations.loader import MigrationLoader
+ from django.db.migrations.recorder import MigrationRecorder
+-from django.test import TestCase, modify_settings, override_settings
++from django.test import TestCase, TransactionTestCase, modify_settings, override_settings
+ 
+ from .test_base import MigrationTestBase
+ 
+ 
+-class RecorderTests(TestCase):
++class AgnosticRouter:
++    def allow_migrate(self, db, app_label, **hints):
++        return None
++
++
++class MigrateNothingRouter:
++    def allow_migrate(self, db, app_label, **hints):
++        return False
++
++
++class MigrateEverythingRouter:
++    def allow_migrate(self, db, app_label, **hints):
++        return True
++
++
++class RecorderTests(TransactionTestCase):
+     """
+     Tests recording migrations as applied or not.
+     """
++    available_apps = ['migrations']
+     databases = {'default', 'other'}
+ 
++    def _drop_migrations_table(self, recorder):
++        """Simulate a database where the django_migrations table is absent."""
++        if recorder.has_table():
++            with recorder.connection.schema_editor() as editor:
++                editor.delete_model(recorder.Migration)
++
+     def test_apply(self):
+         """
+         Tests marking migrations as applied/unapplied.
+@@ -45,6 +67,61 @@ class RecorderTests(TestCase):
+             set(),
+         )
+ 
++    @override_settings(DATABASE_ROUTERS=[MigrateNothingRouter()])
++    def test_apply_skipped_when_router_disallows_migrating(self):
++        """
++        The recorder doesn't create the django_migrations table nor record
++        migrations on a database where the router disallows migrating.
++        """
++        recorder = MigrationRecorder(connections['other'])
++        self._drop_migrations_table(recorder)
++        self.assertFalse(recorder.has_table())
++        recorder.record_applied("myapp", "0432_ponies")
++        self.assertFalse(recorder.has_table())
++        self.assertEqual(recorder.applied_migrations(), {})
++        recorder.record_unapplied("myapp", "0432_ponies")
++        self.assertFalse(recorder.has_table())
++
++    @override_settings(DATABASE_ROUTERS=[MigrateEverythingRouter()])
++    def test_apply_allowed_when_router_allows_migrating(self):
++        """
++        The recorder creates the table and records migrations when the router
++        allows migrating.
++        """
++        recorder = MigrationRecorder(connections['other'])
++        self._drop_migrations_table(recorder)
++        self.assertFalse(recorder.has_table())
++        recorder.record_applied("myapp", "0432_ponies")
++        self.assertTrue(recorder.has_table())
++        self.assertEqual(
++            {(x, y) for (x, y) in recorder.applied_migrations() if x == "myapp"},
++            {("myapp", "0432_ponies")},
++        )
++        recorder.record_unapplied("myapp", "0432_ponies")
++        self.assertEqual(
++            {(x, y) for (x, y) in recorder.applied_migrations() if x == "myapp"},
++            set(),
++        )
++
++    @override_settings(DATABASE_ROUTERS=[AgnosticRouter()])
++    def test_apply_allowed_when_router_has_no_opinion(self):
++        """
++        The recorder behaves as usual when the router has no opinion.
++        """
++        recorder = MigrationRecorder(connections['other'])
++        self._drop_migrations_table(recorder)
++        recorder.record_applied("myapp", "0432_ponies")
++        self.assertTrue(recorder.has_table())
++        self.assertEqual(
++            {(x, y) for (x, y) in recorder.applied_migrations() if x == "myapp"},
++            {("myapp", "0432_ponies")},
++        )
++        recorder.record_unapplied("myapp", "0432_ponies")
++        self.assertEqual(
++            {(x, y) for (x, y) in recorder.applied_migrations() if x == "myapp"},
++            set(),
++        )
++
+ 
+ class LoaderTests(TestCase):
+     """
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(django/db/migrations/executor\.py)' ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 migrations.test_executor migrations.test_loader
+cat coverage.cover
+git checkout 361bb8f786f112ee275be136795c0b1ecefff928
+git apply /root/pre_state.patch

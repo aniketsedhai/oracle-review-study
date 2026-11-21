@@ -179,7 +179,7 @@ for the exact code used by each experiment.
 | `tests/` | Unpaid behavioral checks, including comparison with frozen controllers |
 | `inputs/study-26/` | Generation-only issue inputs and checksums |
 | `results/` | Small result summaries and provenance |
-| `runs/`, `evaluation/` | Local experiment evidence; raw work is excluded from normal Git tracking |
+| `runs/`, `follow-up/*/runs/`, `evaluation/` | Frozen trajectories, review records, predictions, and official evaluation evidence for the 156 reported runs |
 | `historical/`, `compatibility/`, `follow-up/` | Preserved experiment source; not additional active implementations to study |
 
 `check_provider.py`, `prepare_study.py`, `docker_startup.py`, `test_layout.py`,
@@ -231,12 +231,14 @@ are separate from running or simplifying the workflow.
 
 ## Exporting final results
 
-After unpacking the evidence archive beside this source tree, run
+With the frozen evidence included in this repository, run
 `python3 -B analysis/export_all.py`. It checks selected prediction hashes and
 rebuilds the complete six-configuration CSV and JSON in `results/final/`.
 Original official reports are not rewritten; environment-blocked annotations
 supplement their scores.
 
-The final report and Overleaf source are submitted separately. Trajectories/logs
-are distributed in the accompanying evidence archive rather than normal Git
-tracking. That archive includes all 156 reported runs and evaluation evidence.
+The final report and Overleaf source are submitted separately. The repository
+includes the selected frozen trajectories and evaluation logs for all 156 reported
+runs. The accompanying evidence archive also contains these records, the pinned
+dataset snapshot, and upstream source bundles. Ignore rules continue to exclude
+new local runs by default; the published evidence is an explicitly selected snapshot.

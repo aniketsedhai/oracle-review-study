@@ -1,0 +1,42 @@
+diff --git a/tests/migrations/test_commands.py b/tests/migrations/test_commands.py
+index bf78b60..a9eb62d 100644
+--- a/tests/migrations/test_commands.py
++++ b/tests/migrations/test_commands.py
+@@ -31,6 +31,37 @@ class MigrateTests(MigrationTestBase):
+     """
+     databases = {'default', 'other'}
+ 
++    @override_settings(
++        MIGRATION_MODULES={"migrations": "migrations.test_migrations"},
++        DATABASE_ROUTERS=['migrations.routers.TestRouter'],
++    )
++    def test_migrate_recorder_obeys_router(self):
++        """
++        The MigrationRecorder doesn't create the django_migrations table on a
++        database where the router disallows migrating.
++        """
++        recorder = MigrationRecorder(connections['other'])
++        self.assertFalse(recorder.has_table())
++        recorder.record_applied("migrations", "0001_initial")
++        self.assertFalse(recorder.has_table())
++        self.assertEqual(recorder.applied_migrations(), {})
++        recorder.record_unapplied("migrations", "0001_initial")
++        self.assertFalse(recorder.has_table())
++
++    @override_settings(
++        MIGRATION_MODULES={"migrations": "migrations.test_migrations"},
++        DATABASE_ROUTERS=['migrations.routers.TestRouter'],
++    )
++    def test_migrate_other_database_does_not_create_migrations_table(self):
++        """
++        Running migrate against a database where the router disallows
++        migrating doesn't create the django_migrations table there.
++        """
++        call_command("migrate", "migrations", "0001", verbosity=0, database="other")
++        self.assertTableNotExists("django_migrations", using="other")
++        self.assertTableNotExists("migrations_author", using="other")
++        self.assertTableNotExists("migrations_tribble", using="other")
++
+     @override_settings(MIGRATION_MODULES={"migrations": "migrations.test_migrations"})
+     def test_migrate(self):
+         """

@@ -1,0 +1,44 @@
+diff --git a/tests/handlers/tests.py b/tests/handlers/tests.py
+index 1d445cd..0480abe 100644
+--- a/tests/handlers/tests.py
++++ b/tests/handlers/tests.py
+@@ -1,4 +1,4 @@
+-from django.core.exceptions import ImproperlyConfigured
++from django.core.exceptions import ImproperlyConfigured, MiddlewareNotUsed
+ from django.core.handlers.wsgi import WSGIHandler, WSGIRequest, get_script_name
+ from django.core.signals import request_finished, request_started
+ from django.db import close_old_connections, connection
+@@ -163,6 +163,17 @@ def empty_middleware(get_response):
+     pass
+ 
+ 
++class SyncMiddlewareNotUsed:
++    sync_capable = True
++    async_capable = False
++
++    def __init__(self, get_response):
++        raise MiddlewareNotUsed
++
++    def __call__(self, request):
++        return self.get_response(request)
++
++
+ @override_settings(ROOT_URLCONF='handlers.urls')
+ class HandlerRequestTests(SimpleTestCase):
+     request_factory = RequestFactory()
+@@ -259,6 +270,15 @@ class AsyncHandlerRequestTests(SimpleTestCase):
+         response = await self.async_client.get('/async_regular/')
+         self.assertEqual(response.status_code, 200)
+ 
++    @override_settings(MIDDLEWARE=['handlers.tests.SyncMiddlewareNotUsed'])
++    async def test_middleware_not_used_does_not_poison_async_chain(self):
++        """
++        A sync-only middleware raising MiddlewareNotUsed must not leave the
++        handler adapted for the wrong mode for the remaining middleware.
++        """
++        response = await self.async_client.get('/regular/')
++        self.assertEqual(response.status_code, 200)
++
+     async def test_suspiciousop_in_view_returns_400(self):
+         response = await self.async_client.get('/suspicious/')
+         self.assertEqual(response.status_code, 400)

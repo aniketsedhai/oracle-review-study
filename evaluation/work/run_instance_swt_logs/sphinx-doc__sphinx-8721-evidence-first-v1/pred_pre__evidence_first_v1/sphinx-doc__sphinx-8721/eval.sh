@@ -1,0 +1,45 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD 82ef497a8c88f0f6e50d84520e7276bfbf65025d >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff 82ef497a8c88f0f6e50d84520e7276bfbf65025d
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .[test]
+git apply -v - <<'EOF_114329324912'
+diff --git a/tests/test_ext_viewcode.py b/tests/test_ext_viewcode.py
+index 7986409..9faf56d 100644
+--- a/tests/test_ext_viewcode.py
++++ b/tests/test_ext_viewcode.py
+@@ -102,3 +102,19 @@ def test_local_source_files(app, status, warning):
+ 
+     assert result.count('href="_modules/not_a_package/submodule.html#not_a_package.submodule.Class3.class_attr"') == 1
+     assert result.count('This is the class attribute class_attr') == 1
++
++
++@pytest.mark.sphinx('html', testroot='ext-viewcode')
++def test_viewcode_epub_disabled(make_app, app_params):
++    # build html first, then epub reusing the environment (like "make html epub")
++    args, kwargs = app_params
++    app = make_app(*args, **kwargs)
++    app.build()
++    assert (app.outdir / '_modules').exists()
++
++    app2 = make_app('epub', srcdir=app.srcdir, freshenv=False)
++    app2.build()
++
++    # viewcode_enable_epub is False by default; no module pages for epub
++    assert not (app2.outdir / '_modules').exists()
++    assert '_modules/' not in (app2.outdir / 'content.opf').read_text()
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(sphinx/ext/viewcode\.py)' -m tox -epy39 -v -- tests/test_ext_viewcode.py
+cat coverage.cover
+git checkout 82ef497a8c88f0f6e50d84520e7276bfbf65025d
+git apply /root/pre_state.patch

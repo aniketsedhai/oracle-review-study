@@ -1,0 +1,146 @@
+diff --git a/tests/migrations/test_executor.py b/tests/migrations/test_executor.py
+index ca2c03c..9c60ef2 100644
+--- a/tests/migrations/test_executor.py
++++ b/tests/migrations/test_executor.py
+@@ -760,6 +760,65 @@ class ExecutorTests(MigrationTestBase):
+         )
+ 
+ 
++    def _drop_migrations_table(self):
++        """Drop the django_migrations table to simulate a fresh database."""
++        recorder = MigrationRecorder(connection)
++        with connection.cursor() as cursor:
++            cursor.execute(
++                'DROP TABLE %s' % recorder.Migration._meta.db_table
++            )
++        self.assertFalse(recorder.has_table())
++
++    @override_settings(MIGRATION_MODULES={"migrations": "migrations.test_migrations"})
++    def test_migrate_skipped_if_router_disallows(self):
++        """The recorder doesn't create its table on databases where the
++        router disallows migrating the migrations app."""
++        class DisallowMigrationsRouter:
++            def allow_migrate(self, db, app_label, **hints):
++                return app_label != 'migrations'
++
++        self._drop_migrations_table()
++        recorder = MigrationRecorder(connection)
++        with override_settings(DATABASE_ROUTERS=[DisallowMigrationsRouter()]):
++            executor = MigrationExecutor(connection)
++            executor.migrate([("migrations", "0001_initial")])
++            self.assertFalse(recorder.has_table())
++            self.assertEqual(recorder.applied_migrations(), {})
++            self.assertTableNotExists("migrations_author")
++            self.assertTableNotExists("migrations_tribble")
++            executor.loader.build_graph()
++            executor.migrate([("migrations", None)])
++            self.assertFalse(recorder.has_table())
++
++    @override_settings(MIGRATION_MODULES={"migrations": "migrations.test_migrations"})
++    def test_migrate_allowed_if_router_allows(self):
++        """The recorder creates its table when the router allows migrating."""
++        class AllowMigrationsRouter:
++            def allow_migrate(self, db, app_label, **hints):
++                return app_label == 'migrations'
++
++        self._drop_migrations_table()
++        recorder = MigrationRecorder(connection)
++        with override_settings(DATABASE_ROUTERS=[AllowMigrationsRouter()]):
++            executor = MigrationExecutor(connection)
++            executor.migrate([("migrations", "0001_initial")])
++            self.assertTrue(recorder.has_table())
++            self.assertIn(
++                ("migrations", "0001_initial"),
++                recorder.applied_migrations(),
++            )
++            self.assertTableExists("migrations_author")
++            self.assertTableExists("migrations_tribble")
++            executor.loader.build_graph()
++            executor.migrate([("migrations", None)])
++            self.assertNotIn(
++                ("migrations", "0001_initial"),
++                recorder.applied_migrations(),
++            )
++            self.assertTableNotExists("migrations_author")
++            self.assertTableNotExists("migrations_tribble")
++
++
+ class FakeLoader:
+     def __init__(self, graph, applied):
+         self.graph = graph
+diff --git a/tests/migrations/test_loader.py b/tests/migrations/test_loader.py
+index 03a9850..f75696c 100644
+--- a/tests/migrations/test_loader.py
++++ b/tests/migrations/test_loader.py
+@@ -8,7 +8,9 @@ from django.db.migrations.exceptions import (
+ )
+ from django.db.migrations.loader import MigrationLoader
+ from django.db.migrations.recorder import MigrationRecorder
+-from django.test import TestCase, modify_settings, override_settings
++from django.test import (
++    TestCase, TransactionTestCase, modify_settings, override_settings,
++)
+ 
+ from .test_base import MigrationTestBase
+ 
+@@ -46,6 +48,60 @@ class RecorderTests(TestCase):
+         )
+ 
+ 
++class RecorderRouterTests(TransactionTestCase):
++    """
++    Tests that the migration recorder obeys database router allow_migrate()
++    rules for the migrations app.
++    """
++    databases = {'default', 'other'}
++
++    def _drop_migrations_table(self, alias):
++        """Drop the django_migrations table to simulate a fresh database."""
++        recorder = MigrationRecorder(connections[alias])
++        with connections[alias].cursor() as cursor:
++            cursor.execute(
++                'DROP TABLE %s' % recorder.Migration._meta.db_table
++            )
++        self.assertFalse(recorder.has_table())
++
++    def test_migrate_skipped_if_router_disallows(self):
++        """The recorder doesn't create its table on databases where the
++        router disallows migrating the migrations app."""
++        class DisallowMigrationsRouter:
++            def allow_migrate(self, db, app_label, **hints):
++                return app_label != 'migrations'
++
++        self._drop_migrations_table('other')
++        recorder = MigrationRecorder(connections['other'])
++        with override_settings(DATABASE_ROUTERS=[DisallowMigrationsRouter()]):
++            recorder.record_applied('myapp', '0432_ponies')
++            self.assertFalse(recorder.has_table())
++            self.assertEqual(recorder.applied_migrations(), {})
++            recorder.record_unapplied('myapp', '0432_ponies')
++            self.assertFalse(recorder.has_table())
++
++    def test_migrate_allowed_if_router_allows(self):
++        """The recorder creates its table when the router allows migrating."""
++        class AllowMigrationsRouter:
++            def allow_migrate(self, db, app_label, **hints):
++                return app_label == 'migrations'
++
++        self._drop_migrations_table('other')
++        recorder = MigrationRecorder(connections['other'])
++        with override_settings(DATABASE_ROUTERS=[AllowMigrationsRouter()]):
++            recorder.record_applied('myapp', '0432_ponies')
++            self.assertTrue(recorder.has_table())
++            self.assertIn(
++                ('myapp', '0432_ponies'),
++                recorder.applied_migrations(),
++            )
++            recorder.record_unapplied('myapp', '0432_ponies')
++            self.assertNotIn(
++                ('myapp', '0432_ponies'),
++                recorder.applied_migrations(),
++            )
++
++
+ class LoaderTests(TestCase):
+     """
+     Tests the disk and database loader, and running through migrations

@@ -1,0 +1,61 @@
+diff --git a/astropy/io/fits/tests/test_header.py b/astropy/io/fits/tests/test_header.py
+index a8f4e11..3e9145e 100644
+--- a/astropy/io/fits/tests/test_header.py
++++ b/astropy/io/fits/tests/test_header.py
+@@ -137,6 +137,56 @@ class TestHeaderFunctions(FitsTestCase):
+         ):
+             assert str(c) == _pad("FLOATNUM= -4.6737463674763E+32")
+ 
++    def test_float_value_card_uses_shortest_representation(self):
++        """
++        Regression test for the issue where ``Card`` used a string
++        representation of floats that was larger than necessary, forcing
++        comments to be truncated.
++
++        The value ``0.009125`` should be written as ``0.009125`` rather than
++        being expanded to ``0.009124999999999999``.
++        """
++        c = fits.Card("HIERARCH ESO IFM CL RADIUS", 0.009125,
++                      "[m] radius arround actuator to avoid")
++        # No warning should be raised because the card fits in 80 characters.
++        with warnings.catch_warnings():
++            warnings.simplefilter("error")
++            assert str(c) == _pad(
++                "HIERARCH ESO IFM CL RADIUS = 0.009125"
++                " / [m] radius arround actuator to avoid"
++            )
++        assert c.value == 0.009125
++        assert c.comment == "[m] radius arround actuator to avoid"
++
++    def test_float_value_card_roundtrip(self):
++        """
++        A card created from a value/comment should round-trip through its
++        string representation without losing information.
++        """
++        c = fits.Card("HIERARCH ESO IFM CL RADIUS", 0.009125,
++                      "[m] radius arround actuator to avoid")
++        c2 = fits.Card.fromstring(str(c))
++        assert c2.keyword == c.keyword
++        assert c2.value == c.value
++        assert c2.comment == c.comment
++
++    def test_float_value_card_shortest_representation(self):
++        """
++        Floats that have a short ``str`` representation should use it, while
++        still producing a valid FITS value string (with a decimal point).
++        """
++        # A value whose repr is short and exact.
++        c = fits.Card("VALUE", 0.1)
++        assert str(c) == _pad("VALUE   =                  0.1")
++
++        # An integer-valued float must still get a decimal point.
++        c = fits.Card("VALUE", 1.0)
++        assert str(c) == _pad("VALUE   =                  1.0")
++
++        # A value that needs the full precision should still be representable.
++        c = fits.Card("VALUE", 1.2345678901234567)
++        assert c.value == 1.2345678901234567
++
+     def test_complex_value_card(self):
+         """Test Card constructor with complex value"""
+ 

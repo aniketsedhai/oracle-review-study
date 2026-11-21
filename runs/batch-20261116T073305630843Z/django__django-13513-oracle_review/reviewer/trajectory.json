@@ -1,0 +1,981 @@
+{
+  "info": {
+    "model_stats": {
+      "instance_cost": 0.0437343,
+      "api_calls": 9
+    },
+    "config": {
+      "agent": {
+        "system_template": "You are a software testing agent using a bash tool. Every response must include at least one bash tool call.",
+        "instance_template": "{{task}}",
+        "step_limit": 0,
+        "cost_limit": 0.0,
+        "wall_time_limit_seconds": 0,
+        "max_consecutive_format_errors": 3,
+        "output_path": null
+      },
+      "agent_type": "minisweagent.agents.default.DefaultAgent",
+      "model": {
+        "model_name": "deepseek/deepseek-flash",
+        "model_kwargs": {
+          "api_base": "https://api.deepseek.com",
+          "temperature": 0,
+          "max_tokens": 4096,
+          "timeout": 90,
+          "num_retries": 0,
+          "extra_body": {
+            "thinking": {
+              "type": "disabled"
+            }
+          }
+        },
+        "litellm_model_registry": null,
+        "set_cache_control": null,
+        "cost_tracking": "default",
+        "format_error_template": "{{ error }}",
+        "observation_template": "{% if output.exception_info %}<exception>{{output.exception_info}}</exception>\n{% endif %}<returncode>{{output.returncode}}</returncode>\n<output>\n{{output.output}}</output>",
+        "multimodal_regex": ""
+      },
+      "model_type": "runtime.GuardedModel",
+      "environment": {
+        "image": "docker.io/swebench/sweb.eval.x86_64.django_1776_django-13513:latest",
+        "cwd": "/testbed",
+        "env": {
+          "PAGER": "cat",
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "PYTHONUNBUFFERED": "1",
+          "HOME": "/tmp",
+          "GIT_CONFIG_COUNT": "1",
+          "GIT_CONFIG_KEY_0": "safe.directory",
+          "GIT_CONFIG_VALUE_0": "/testbed",
+          "PATH": "/opt/miniconda3/envs/testbed/bin:/opt/miniconda3/condabin:/opt/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          "PYTHONPATH": "/testbed"
+        },
+        "forward_env": [],
+        "timeout": 60,
+        "executable": "docker",
+        "run_args": [
+          "--rm",
+          "--platform",
+          "linux/amd64",
+          "--network",
+          "none"
+        ],
+        "container_timeout": "2h",
+        "pull_timeout": 180,
+        "interpreter": [
+          "runuser",
+          "-u",
+          "nobody",
+          "--",
+          "bash",
+          "-c"
+        ]
+      },
+      "environment_type": "minisweagent.environments.docker.DockerEnvironment"
+    },
+    "mini_version": "2.4.6",
+    "exit_status": "",
+    "submission": ""
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a software testing agent using a bash tool. Every response must include at least one bash tool call."
+    },
+    {
+      "role": "user",
+      "content": "# Oracle reviewer\n\nYou are reviewing a candidate bug-reproducing unit-test patch. Your goal is to\ncheck whether its oracle\u2014the condition used to judge correctness\u2014matches the\nintended behavior supported by the bug report and available repository evidence.\nKeep the candidate when appropriate; revise it when you identify a supported\nimprovement. Do not assume a revision is necessary.\n\n## Inputs and access\n\nThe controller supplies the original bug report, candidate test patch, permitted\ntest paths, current review round, and remaining resource limits. The candidate is\nalready applied to the buggy checkout. This is a fresh conversation: you do not\nreceive the generator's conversation history. Subsequent rounds retain your own\nreview history for this instance.\n\nYou may inspect the buggy source, documentation, and existing tests and execute\nrelevant commands in the provided environment. Existing tests are optional\nevidence, not a prerequisite for creating a test.\n\nDo not access the internet, reference fixes, golden tests, later commits, or\nevaluator artifacts. Modify only the test paths permitted by the controller. Do\nnot change production code or project configuration, disable tests, remove\nexisting tests, or weaken existing checks. Do not implement mutation testing.\n\n## One review round\n\n1. Identify the input, operation, or state that triggers the reported defect.\n2. State the expected behavior and its supporting evidence. Cite relevant issue\n   text and repository file locations, including line numbers where practical.\n   Distinguish explicit requirements from inferences based on callers, related\n   implementations, code patterns, or invariants. Current buggy output alone\n   does not establish correct behavior.\n3. Identify the candidate's oracle and explain whether it observes the expected\n   behavior. Require an oracle appropriate to the issue: for crash bugs,\n   successful execution may be sufficient; for incorrect-output bugs, check the\n   relevant output or property explicitly. Do not invent an exact expected value\n   when evidence supports only a broader property.\n4. Run the relevant tests where feasible. Inspect whether any failure comes from\n   the reported defect, an unsupported expectation, or unrelated setup. Preserve\n   the real command exit status; avoid pipelines that hide test failures.\n5. Keep or revise the candidate. If you revise it, execute the revised test where\n   feasible and examine its result. Focus changes on oracle alignment; avoid\n   unrelated cleanup or mandatory simplification and behavior separation.\n6. Return the review record described below, including unresolved concerns and\n   whether another round would have a concrete purpose.\n\nA test failing on buggy code is not sufficient evidence of oracle correctness.\nPassing on buggy code may mean the trigger was missed or the check is inadequate;\ndo not reverse a justified expectation merely to force a failure. Only separate\nevaluation can establish fail-before/pass-after behavior against the reference\nfix.\n\n## Review record\n\nReturn a record for the current round with these fields:\n\n- **Trigger:** reported input, operation, or state.\n- **Expected behavior:** what should happen.\n- **Evidence:** supporting issue text and/or repository locations; label inferences.\n- **Current oracle:** assertion, expected exception, or implicit check.\n- **Alignment:** whether the oracle checks the supported expectation, and why.\n- **Execution evidence:** commands, exit codes, relevant results, and failure\n  explanation. State explicitly when execution was not possible.\n- **Changes:** edits made this round, or \"none\".\n- **Uncertainty:** remaining ambiguity or limitations, or \"none identified\".\n- **Decision:** `keep`, `revise`, or `uncertain`. `revise` means this round made\n  changes; it does not by itself request another round.\n- **Continue review:** `yes` only if an actionable concern remains and another\n  round could resolve it; otherwise `no`. Explain the next action if `yes`.\n- **Stop reason:** `aligned`, `unresolved_uncertainty`, `round_limit`,\n  `resource_limit`, or `continue`.\n\nDo not claim the test is confirmed to reproduce the bug. Describe the evidence\navailable in the buggy checkout and leave final reproduction grading to the\nevaluator.\n\n## Stopping rules\n\nStop when no actionable oracle concern remains, available evidence cannot resolve\nremaining uncertainty, three rounds have completed, or the controller's resource\nlimit is reached. Do not repeat a review solely to fill the round allowance.\n\nThe controller enforces limits and saves patches. Its limits take precedence over\na request to continue. If interrupted, the controller will preserve the latest\napplicable, permitted saved patch; it must not select a patch using hidden\nevaluation outcomes.\n\n\nBUG REPORT\ndebug error view doesn't respect exc.__suppress_context__ (PEP 415)\nDescription\n\t\nConsider the following view that raises an exception:\nclass TestView(View):\n\tdef get(self, request, *args, **kwargs):\n\t\ttry:\n\t\t\traise RuntimeError('my error')\n\t\texcept Exception as exc:\n\t\t\traise ValueError('my new error') from None\nEven though the raise is from None, unlike the traceback Python shows, the debug error view still shows the RuntimeError.\nThis is because the explicit_or_implicit_cause() function inside get_traceback_frames() doesn't respect exc.__suppress_context__, which was introduced in Python 3.3's PEP 415:\n\u200bhttps://github.com/django/django/blob/38a21f2d9ed4f556af934498ec6a242f6a20418a/django/views/debug.py#L392\ndef get_traceback_frames(self):\n\tdef explicit_or_implicit_cause(exc_value):\n\t\texplicit = getattr(exc_value, '__cause__', None)\n\t\timplicit = getattr(exc_value, '__context__', None)\n\t\treturn explicit or implicit\nInstead, it should be something more like (simplifying also for Python 3):\ndef explicit_or_implicit_cause(exc_value):\n\treturn (\n\t\texc_value.__cause__ or\n\t\t(None if exc_value.__suppress_context__ else\n\t\t\texc_value.__context__)\n\t)\n\n\nPERMITTED TEST ROOTS\n[\"tests\"]\n\nCANDIDATE PATCH (already applied)\ndiff --git a/tests/view_tests/tests/test_debug.py b/tests/view_tests/tests/test_debug.py\nindex 3cbeb2e..a7a63c6 100644\n--- a/tests/view_tests/tests/test_debug.py\n+++ b/tests/view_tests/tests/test_debug.py\n@@ -467,6 +467,64 @@ class ExceptionReporterTests(SimpleTestCase):\n         self.assertIn('<p>Request data not supplied</p>', html)\n         self.assertNotIn('During handling of the above exception', html)\n \n+    def test_reporting_frames_with_suppressed_context(self):\n+        try:\n+            try:\n+                raise RuntimeError('my error')\n+            except Exception:\n+                raise ValueError('my new error') from None\n+        except ValueError:\n+            exc_type, exc_value, tb = sys.exc_info()\n+        request = self.rf.get('/test_view/')\n+        reporter = ExceptionReporter(request, exc_type, exc_value, tb)\n+        frames = reporter.get_traceback_frames()\n+        # Only the ValueError is reported, the suppressed RuntimeError isn't.\n+        self.assertEqual(len(frames), 1)\n+        self.assertIsNone(frames[0]['exc_cause'])\n+        html = reporter.get_traceback_html()\n+        self.assertNotIn('During handling of the above exception', html)\n+        self.assertNotIn('was the direct cause of the following exception', html)\n+        text = reporter.get_traceback_text()\n+        self.assertNotIn('During handling of the above exception', text)\n+        self.assertNotIn('was the direct cause of the following exception', text)\n+\n+    def test_reporting_frames_with_explicit_cause_and_suppressed_context(self):\n+        try:\n+            try:\n+                raise RuntimeError('my error')\n+            except Exception:\n+                raise ValueError('my new error') from KeyError('explicit cause')\n+        except ValueError:\n+            exc_type, exc_value, tb = sys.exc_info()\n+        request = self.rf.get('/test_view/')\n+        reporter = ExceptionReporter(request, exc_type, exc_value, tb)\n+        frames = reporter.get_traceback_frames()\n+        # The explicit cause is reported, the suppressed context isn't.\n+        self.assertEqual(len(frames), 2)\n+        self.assertEqual(frames[0]['exc_cause'], KeyError('explicit cause'))\n+        self.assertIs(frames[0]['exc_cause_explicit'], exc_value.__cause__)\n+        html = reporter.get_traceback_html()\n+        self.assertNotIn('During handling of the above exception', html)\n+        self.assertIn('The above exception (explicit cause) was the direct cause', html)\n+\n+    def test_reporting_frames_with_implicit_context(self):\n+        try:\n+            try:\n+                raise RuntimeError('my error')\n+            except Exception:\n+                raise ValueError('my new error')\n+        except ValueError:\n+            exc_type, exc_value, tb = sys.exc_info()\n+        request = self.rf.get('/test_view/')\n+        reporter = ExceptionReporter(request, exc_type, exc_value, tb)\n+        frames = reporter.get_traceback_frames()\n+        # Without suppression, the implicit context is still reported.\n+        self.assertEqual(len(frames), 2)\n+        self.assertEqual(frames[0]['exc_cause'], exc_value.__context__)\n+        self.assertIsInstance(frames[0]['exc_cause'], RuntimeError)\n+        html = reporter.get_traceback_html()\n+        self.assertIn('During handling of the above exception (my error)', html)\n+\n     def test_reporting_of_nested_exceptions(self):\n         request = self.rf.get('/test_view/')\n         try:\n\n\nREVIEW ROUND 1\nFinish this round with one standalone bash tool call whose output is:\nCOMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\nfollowed by one JSON object containing these keys:\ntrigger, expected_behavior, evidence, current_oracle, alignment,\nexecution_evidence, changes, uncertainty, decision, continue_review, stop_reason.\nUse a JSON boolean for continue_review. Set stop_reason to continue only when\ncontinue_review is true. Otherwise choose aligned, unresolved_uncertainty,\nround_limit, or resource_limit. You may print both lines with a Python command.\nDo not write the review record into the project checkout.\n"
+    },
+    {
+      "content": "I'll start by inspecting the repository state and the relevant source code.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /repo 2>/dev/null || cd ~; pwd; ls; git log --oneline -3 2>/dev/null\"}",
+            "name": "bash"
+          },
+          "id": "call_00_AsihlA0xSA2shFNjIl0o4169",
+          "type": "function"
+        },
+        {
+          "index": 1,
+          "function": {
+            "arguments": "{\"command\": \"cd /repo 2>/dev/null || cd ~; sed -n 370,470p django/views/debug.py\"}",
+            "name": "bash"
+          },
+          "id": "call_01_nFtoxz5QUCaL9q5LC08Y8053",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /repo 2>/dev/null || cd ~; pwd; ls; git log --oneline -3 2>/dev/null",
+            "tool_call_id": "call_00_AsihlA0xSA2shFNjIl0o4169"
+          },
+          {
+            "command": "cd /repo 2>/dev/null || cd ~; sed -n 370,470p django/views/debug.py",
+            "tool_call_id": "call_01_nFtoxz5QUCaL9q5LC08Y8053"
+          }
+        ],
+        "response": {
+          "id": "2ce949f9-cc97-406c-8456-79112b16b03b",
+          "created": 1794815172,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "I'll start by inspecting the repository state and the relevant source code.",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /repo 2>/dev/null || cd ~; pwd; ls; git log --oneline -3 2>/dev/null\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_AsihlA0xSA2shFNjIl0o4169",
+                    "type": "function"
+                  },
+                  {
+                    "index": 1,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /repo 2>/dev/null || cd ~; sed -n 370,470p django/views/debug.py\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_01_nFtoxz5QUCaL9q5LC08Y8053",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 129,
+            "prompt_tokens": 2565,
+            "total_tokens": 2694,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 1024
+            },
+            "prompt_cache_hit_tokens": 1024,
+            "prompt_cache_miss_tokens": 1541
+          }
+        },
+        "cost": 0.0009243,
+        "timestamp": 1794815173.55613
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\nbash: line 1: cd: /nonexistent: No such file or directory\n/testbed\nAUTHORS\nCONTRIBUTING.rst\nDjango.egg-info\nGruntfile.js\nINSTALL\nLICENSE\nLICENSE.python\nMANIFEST.in\nREADME.rst\ndjango\ndocs\nextras\njs_tests\npackage.json\nscripts\nsetup.cfg\nsetup.py\ntests\ntox.ini\n4fd0212 Buggy starting snapshot\n</output>",
+      "extra": {
+        "raw_output": "bash: line 1: cd: /nonexistent: No such file or directory\n/testbed\nAUTHORS\nCONTRIBUTING.rst\nDjango.egg-info\nGruntfile.js\nINSTALL\nLICENSE\nLICENSE.python\nMANIFEST.in\nREADME.rst\ndjango\ndocs\nextras\njs_tests\npackage.json\nscripts\nsetup.cfg\nsetup.py\ntests\ntox.ini\n4fd0212 Buggy starting snapshot\n",
+        "returncode": 0,
+        "timestamp": 1794815173.844079,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_AsihlA0xSA2shFNjIl0o4169",
+      "role": "tool"
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\nbash: line 1: cd: /nonexistent: No such file or directory\n            return None, [], None, []\n\n        # If we just read the source from a file, or if the loader did not\n        # apply tokenize.detect_encoding to decode the source into a\n        # string, then we should do that ourselves.\n        if isinstance(source[0], bytes):\n            encoding = 'ascii'\n            for line in source[:2]:\n                # File coding may be specified. Match pattern from PEP-263\n                # (https://www.python.org/dev/peps/pep-0263/)\n                match = re.search(br'coding[:=]\\s*([-\\w.]+)', line)\n                if match:\n                    encoding = match[1].decode('ascii')\n                    break\n            source = [str(sline, encoding, 'replace') for sline in source]\n\n        lower_bound = max(0, lineno - context_lines)\n        upper_bound = lineno + context_lines\n\n        try:\n            pre_context = source[lower_bound:lineno]\n            context_line = source[lineno]\n            post_context = source[lineno + 1:upper_bound]\n        except IndexError:\n            return None, [], None, []\n        return lower_bound, pre_context, context_line, post_context\n\n    def get_traceback_frames(self):\n        def explicit_or_implicit_cause(exc_value):\n            explicit = getattr(exc_value, '__cause__', None)\n            suppress_context = getattr(exc_value, '__suppress_context__', None)\n            implicit = getattr(exc_value, '__context__', None)\n            return explicit or (None if suppress_context else implicit)\n\n        # Get the exception and all its causes\n        exceptions = []\n        exc_value = self.exc_value\n        while exc_value:\n            exceptions.append(exc_value)\n            exc_value = explicit_or_implicit_cause(exc_value)\n            if exc_value in exceptions:\n                warnings.warn(\n                    \"Cycle in the exception chain detected: exception '%s' \"\n                    \"encountered again.\" % exc_value,\n                    ExceptionCycleWarning,\n                )\n                # Avoid infinite loop if there's a cyclic reference (#29393).\n                break\n\n        frames = []\n        # No exceptions were supplied to ExceptionReporter\n        if not exceptions:\n            return frames\n\n        # In case there's just one exception, take the traceback from self.tb\n        exc_value = exceptions.pop()\n        tb = self.tb if not exceptions else exc_value.__traceback__\n\n        while tb is not None:\n            # Support for __traceback_hide__ which is used by a few libraries\n            # to hide internal frames.\n            if tb.tb_frame.f_locals.get('__traceback_hide__'):\n                tb = tb.tb_next\n                continue\n            filename = tb.tb_frame.f_code.co_filename\n            function = tb.tb_frame.f_code.co_name\n            lineno = tb.tb_lineno - 1\n            loader = tb.tb_frame.f_globals.get('__loader__')\n            module_name = tb.tb_frame.f_globals.get('__name__') or ''\n            pre_context_lineno, pre_context, context_line, post_context = self._get_lines_from_file(\n                filename, lineno, 7, loader, module_name,\n            )\n            if pre_context_lineno is None:\n                pre_context_lineno = lineno\n                pre_context = []\n                context_line = '<source code not available>'\n                post_context = []\n            frames.append({\n                'exc_cause': explicit_or_implicit_cause(exc_value),\n                'exc_cause_explicit': getattr(exc_value, '__cause__', True),\n                'tb': tb,\n                'type': 'django' if module_name.startswith('django.') else 'user',\n                'filename': filename,\n                'function': function,\n                'lineno': lineno + 1,\n                'vars': self.filter.get_traceback_frame_variables(self.request, tb.tb_frame),\n                'id': id(tb),\n                'pre_context': pre_context,\n                'context_line': context_line,\n                'post_context': post_context,\n                'pre_context_lineno': pre_context_lineno + 1,\n            })\n\n            # If the traceback for current exception is consumed, try the\n            # other exception.\n            if not tb.tb_next and exceptions:\n                exc_value = exceptions.pop()\n                tb = exc_value.__traceback__\n            else:\n                tb = tb.tb_next\n\n</output>",
+      "extra": {
+        "raw_output": "bash: line 1: cd: /nonexistent: No such file or directory\n            return None, [], None, []\n\n        # If we just read the source from a file, or if the loader did not\n        # apply tokenize.detect_encoding to decode the source into a\n        # string, then we should do that ourselves.\n        if isinstance(source[0], bytes):\n            encoding = 'ascii'\n            for line in source[:2]:\n                # File coding may be specified. Match pattern from PEP-263\n                # (https://www.python.org/dev/peps/pep-0263/)\n                match = re.search(br'coding[:=]\\s*([-\\w.]+)', line)\n                if match:\n                    encoding = match[1].decode('ascii')\n                    break\n            source = [str(sline, encoding, 'replace') for sline in source]\n\n        lower_bound = max(0, lineno - context_lines)\n        upper_bound = lineno + context_lines\n\n        try:\n            pre_context = source[lower_bound:lineno]\n            context_line = source[lineno]\n            post_context = source[lineno + 1:upper_bound]\n        except IndexError:\n            return None, [], None, []\n        return lower_bound, pre_context, context_line, post_context\n\n    def get_traceback_frames(self):\n        def explicit_or_implicit_cause(exc_value):\n            explicit = getattr(exc_value, '__cause__', None)\n            suppress_context = getattr(exc_value, '__suppress_context__', None)\n            implicit = getattr(exc_value, '__context__', None)\n            return explicit or (None if suppress_context else implicit)\n\n        # Get the exception and all its causes\n        exceptions = []\n        exc_value = self.exc_value\n        while exc_value:\n            exceptions.append(exc_value)\n            exc_value = explicit_or_implicit_cause(exc_value)\n            if exc_value in exceptions:\n                warnings.warn(\n                    \"Cycle in the exception chain detected: exception '%s' \"\n                    \"encountered again.\" % exc_value,\n                    ExceptionCycleWarning,\n                )\n                # Avoid infinite loop if there's a cyclic reference (#29393).\n                break\n\n        frames = []\n        # No exceptions were supplied to ExceptionReporter\n        if not exceptions:\n            return frames\n\n        # In case there's just one exception, take the traceback from self.tb\n        exc_value = exceptions.pop()\n        tb = self.tb if not exceptions else exc_value.__traceback__\n\n        while tb is not None:\n            # Support for __traceback_hide__ which is used by a few libraries\n            # to hide internal frames.\n            if tb.tb_frame.f_locals.get('__traceback_hide__'):\n                tb = tb.tb_next\n                continue\n            filename = tb.tb_frame.f_code.co_filename\n            function = tb.tb_frame.f_code.co_name\n            lineno = tb.tb_lineno - 1\n            loader = tb.tb_frame.f_globals.get('__loader__')\n            module_name = tb.tb_frame.f_globals.get('__name__') or ''\n            pre_context_lineno, pre_context, context_line, post_context = self._get_lines_from_file(\n                filename, lineno, 7, loader, module_name,\n            )\n            if pre_context_lineno is None:\n                pre_context_lineno = lineno\n                pre_context = []\n                context_line = '<source code not available>'\n                post_context = []\n            frames.append({\n                'exc_cause': explicit_or_implicit_cause(exc_value),\n                'exc_cause_explicit': getattr(exc_value, '__cause__', True),\n                'tb': tb,\n                'type': 'django' if module_name.startswith('django.') else 'user',\n                'filename': filename,\n                'function': function,\n                'lineno': lineno + 1,\n                'vars': self.filter.get_traceback_frame_variables(self.request, tb.tb_frame),\n                'id': id(tb),\n                'pre_context': pre_context,\n                'context_line': context_line,\n                'post_context': post_context,\n                'pre_context_lineno': pre_context_lineno + 1,\n            })\n\n            # If the traceback for current exception is consumed, try the\n            # other exception.\n            if not tb.tb_next and exceptions:\n                exc_value = exceptions.pop()\n                tb = exc_value.__traceback__\n            else:\n                tb = tb.tb_next\n\n",
+        "returncode": 0,
+        "timestamp": 1794815173.844485,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_01_nFtoxz5QUCaL9q5LC08Y8053",
+      "role": "tool"
+    },
+    {
+      "content": "The source already contains the fix. Let me check whether the candidate patch is applied and whether the source is actually buggy.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; git status; git diff --stat; git stash list\"}",
+            "name": "bash"
+          },
+          "id": "call_00_M2Po2yx7TgZv9xcTYT2J2700",
+          "type": "function"
+        },
+        {
+          "index": 1,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; grep -n \\\"suppress_context\\\" django/views/debug.py; grep -n \\\"suppress_context\\\\|explicit_or_implicit\\\" tests/view_tests/tests/test_debug.py\"}",
+            "name": "bash"
+          },
+          "id": "call_01_EF3cb5JbniMT6fLFHJ2K0184",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed; git status; git diff --stat; git stash list",
+            "tool_call_id": "call_00_M2Po2yx7TgZv9xcTYT2J2700"
+          },
+          {
+            "command": "cd /testbed; grep -n \"suppress_context\" django/views/debug.py; grep -n \"suppress_context\\|explicit_or_implicit\" tests/view_tests/tests/test_debug.py",
+            "tool_call_id": "call_01_EF3cb5JbniMT6fLFHJ2K0184"
+          }
+        ],
+        "response": {
+          "id": "a4e6fd4b-5868-40bd-8990-0f378eda3765",
+          "created": 1794815174,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "The source already contains the fix. Let me check whether the candidate patch is applied and whether the source is actually buggy.",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; git status; git diff --stat; git stash list\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_M2Po2yx7TgZv9xcTYT2J2700",
+                    "type": "function"
+                  },
+                  {
+                    "index": 1,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; grep -n \\\"suppress_context\\\" django/views/debug.py; grep -n \\\"suppress_context\\\\|explicit_or_implicit\\\" tests/view_tests/tests/test_debug.py\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_01_EF3cb5JbniMT6fLFHJ2K0184",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 146,
+            "prompt_tokens": 3816,
+            "total_tokens": 3962,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 2688
+            },
+            "prompt_cache_hit_tokens": 2688,
+            "prompt_cache_miss_tokens": 1128
+          }
+        },
+        "cost": 0.00132,
+        "timestamp": 1794815175.622287
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\nOn branch master\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   tests/view_tests/tests/test_debug.py\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n tests/view_tests/tests/test_debug.py | 58 ++++++++++++++++++++++++++++++++++++\n 1 file changed, 58 insertions(+)\n</output>",
+      "extra": {
+        "raw_output": "On branch master\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   tests/view_tests/tests/test_debug.py\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n tests/view_tests/tests/test_debug.py | 58 ++++++++++++++++++++++++++++++++++++\n 1 file changed, 58 insertions(+)\n",
+        "returncode": 0,
+        "timestamp": 1794815176.2348611,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_M2Po2yx7TgZv9xcTYT2J2700",
+      "role": "tool"
+    },
+    {
+      "content": "<returncode>1</returncode>\n<output>\n400:            suppress_context = getattr(exc_value, '__suppress_context__', None)\n402:            return explicit or (None if suppress_context else implicit)\n</output>",
+      "extra": {
+        "raw_output": "400:            suppress_context = getattr(exc_value, '__suppress_context__', None)\n402:            return explicit or (None if suppress_context else implicit)\n",
+        "returncode": 1,
+        "timestamp": 1794815176.236161,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_01_EF3cb5JbniMT6fLFHJ2K0184",
+      "role": "tool"
+    },
+    {
+      "content": "The source already has the fix applied (not the buggy version). Let me verify by checking git history of debug.py and running the tests.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; git log --oneline -5 -- django/views/debug.py; git show HEAD:django/views/debug.py | sed -n 395,405p\"}",
+            "name": "bash"
+          },
+          "id": "call_00_MfTnERcuifDssQzlolVZ5672",
+          "type": "function"
+        },
+        {
+          "index": 1,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; python -m pytest tests/view_tests/tests/test_debug.py -k \\\"suppressed_context or implicit_context\\\" -q 2>&1 | tail -30\"}",
+            "name": "bash"
+          },
+          "id": "call_01_T06YN7DtupuyHQnwQ5e60486",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed; git log --oneline -5 -- django/views/debug.py; git show HEAD:django/views/debug.py | sed -n 395,405p",
+            "tool_call_id": "call_00_MfTnERcuifDssQzlolVZ5672"
+          },
+          {
+            "command": "cd /testbed; python -m pytest tests/view_tests/tests/test_debug.py -k \"suppressed_context or implicit_context\" -q 2>&1 | tail -30",
+            "tool_call_id": "call_01_T06YN7DtupuyHQnwQ5e60486"
+          }
+        ],
+        "response": {
+          "id": "608b053b-f040-4a82-a2db-fb2079d42b73",
+          "created": 1794815176,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "The source already has the fix applied (not the buggy version). Let me verify by checking git history of debug.py and running the tests.",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; git log --oneline -5 -- django/views/debug.py; git show HEAD:django/views/debug.py | sed -n 395,405p\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_MfTnERcuifDssQzlolVZ5672",
+                    "type": "function"
+                  },
+                  {
+                    "index": 1,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; python -m pytest tests/view_tests/tests/test_debug.py -k \\\"suppressed_context or implicit_context\\\" -q 2>&1 | tail -30\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_01_T06YN7DtupuyHQnwQ5e60486",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 167,
+            "prompt_tokens": 4151,
+            "total_tokens": 4318,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 3840
+            },
+            "prompt_cache_hit_tokens": 3840,
+            "prompt_cache_miss_tokens": 311
+          }
+        },
+        "cost": 0.0014457,
+        "timestamp": 1794815177.748182
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n4fd0212 Buggy starting snapshot\n        return lower_bound, pre_context, context_line, post_context\n\n    def get_traceback_frames(self):\n        def explicit_or_implicit_cause(exc_value):\n            explicit = getattr(exc_value, '__cause__', None)\n            suppress_context = getattr(exc_value, '__suppress_context__', None)\n            implicit = getattr(exc_value, '__context__', None)\n            return explicit or (None if suppress_context else implicit)\n\n        # Get the exception and all its causes\n        exceptions = []\n</output>",
+      "extra": {
+        "raw_output": "4fd0212 Buggy starting snapshot\n        return lower_bound, pre_context, context_line, post_context\n\n    def get_traceback_frames(self):\n        def explicit_or_implicit_cause(exc_value):\n            explicit = getattr(exc_value, '__cause__', None)\n            suppress_context = getattr(exc_value, '__suppress_context__', None)\n            implicit = getattr(exc_value, '__context__', None)\n            return explicit or (None if suppress_context else implicit)\n\n        # Get the exception and all its causes\n        exceptions = []\n",
+        "returncode": 0,
+        "timestamp": 1794815178.2095308,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_MfTnERcuifDssQzlolVZ5672",
+      "role": "tool"
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n/opt/miniconda3/envs/testbed/bin/python: No module named pytest\n</output>",
+      "extra": {
+        "raw_output": "/opt/miniconda3/envs/testbed/bin/python: No module named pytest\n",
+        "returncode": 0,
+        "timestamp": 1794815178.21107,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_01_T06YN7DtupuyHQnwQ5e60486",
+      "role": "tool"
+    },
+    {
+      "content": "The \"buggy starting snapshot\" already contains the fix in debug.py. This is unusual. Let me run the tests with Django's test runner.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed/tests; python runtests.py view_tests.tests.test_debug.ExceptionReporterTests.test_reporting_frames_with_suppressed_context view_tests.tests.test_debug.ExceptionReporterTests.test_reporting_frames_with_explicit_cause_and_suppressed_context view_tests.tests.test_debug.ExceptionReporterTests.test_reporting_frames_with_implicit_context 2>&1 | tail -30\"}",
+            "name": "bash"
+          },
+          "id": "call_00_AJqIyOvhzfcWaMHNssRX6368",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed/tests; python runtests.py view_tests.tests.test_debug.ExceptionReporterTests.test_reporting_frames_with_suppressed_context view_tests.tests.test_debug.ExceptionReporterTests.test_reporting_frames_with_explicit_cause_and_suppressed_context view_tests.tests.test_debug.ExceptionReporterTests.test_reporting_frames_with_implicit_context 2>&1 | tail -30",
+            "tool_call_id": "call_00_AJqIyOvhzfcWaMHNssRX6368"
+          }
+        ],
+        "response": {
+          "id": "a4c79d17-a45d-4cb4-9e02-cfec34806ff6",
+          "created": 1794815178,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "The \"buggy starting snapshot\" already contains the fix in debug.py. This is unusual. Let me run the tests with Django's test runner.",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed/tests; python runtests.py view_tests.tests.test_debug.ExceptionReporterTests.test_reporting_frames_with_suppressed_context view_tests.tests.test_debug.ExceptionReporterTests.test_reporting_frames_with_explicit_cause_and_suppressed_context view_tests.tests.test_debug.ExceptionReporterTests.test_reporting_frames_with_implicit_context 2>&1 | tail -30\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_AJqIyOvhzfcWaMHNssRX6368",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 157,
+            "prompt_tokens": 4502,
+            "total_tokens": 4659,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 4224
+            },
+            "prompt_cache_hit_tokens": 4224,
+            "prompt_cache_miss_tokens": 278
+          }
+        },
+        "cost": 0.001539,
+        "timestamp": 1794815179.8180108
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\nSystem check identified no issues (0 silenced).\nFFF\n======================================================================\nFAIL: test_reporting_frames_with_suppressed_context (view_tests.tests.test_debug.ExceptionReporterTests)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/testbed/tests/view_tests/tests/test_debug.py\", line 485, in test_reporting_frames_with_suppressed_context\n    self.assertNotIn('During handling of the above exception', html)\nAssertionError: 'During handling of the above exception' unexpectedly found in '<!DOCTYPE html>\\n<html lang=\"en\">\\n<head>\\n  <meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\">\\n  <meta name=\"robots\" content=\"NONE,NOARCHIVE\">\\n  <title>ValueError\\n          at /test_view/</title>\\n  <style type=\"text/css\">\\n    html * { padding:0; margin:0; }\\n    body * { padding:10px 20px; }\\n    body * * { padding:0; }\\n    body { font:small sans-serif; background-color:#fff; color:#000; }\\n    body>div { border-bottom:1px solid #ddd; }\\n    h1 { font-weight:normal; }\\n    h2 { margin-bottom:.8em; }\\n    h3 { margin:1em 0 .5em 0; }\\n    h4 { margin:0 0 .5em 0; font-weight: normal; }\\n    code, pre { font-size: 100%; white-space: pre-wrap; }\\n    table { border:1px solid #ccc; border-collapse: collapse; width:100%; background:white; }\\n    tbody td, tbody th { vertical-align:top; padding:2px 3px; }\\n    thead th {\\n      padding:1px 6px 1px 3px; background:#fefefe; text-align:left;\\n      font-weight:normal; font-size:11px; border:1px solid #ddd;\\n    }\\n    tbody th { width:12em; text-align:right; color:#666; padding-right:.5em; }\\n    table.vars { margin:5px 0 2px 40px; }\\n    table.vars td, table.req td { font-family:monospace; }\\n    table td.code { width:100%; }\\n    table td.code pre { overflow:hidden; }\\n    table.source th { color:#666; }\\n    table.source td { font-family:monospace; white-space:pre; border-bottom:1px solid #eee; }\\n    ul.traceback { list-style-type:none; color: #222; }\\n    ul.traceback li.frame { padding-bottom:1em; color:#4f4f4f; }\\n    ul.traceback li.user { background-color:#e0e0e0; color:#000 }\\n    div.context { padding:10px 0; overflow:hidden; }\\n    div.context ol { padding-left:30px; margin:0 10px; list-style-position: inside; }\\n    div.context ol li { font-family:monospace; white-space:pre; color:#777; cursor:pointer; padding-left: 2px; }\\n    div.context ol li pre { display:inline; }\\n    div.context ol.context-line li { color:#464646; background-color:#dfdfdf; padding: 3px 2px; }\\n    div.context ol.context-line li span { position:absolute; right:32px; }\\n    .user div.context ol.context-line li { background-color:#bbb; color:#000; }\\n    .user div.context ol li { color:#666; }\\n    div.commands { margin-left: 40px; }\\n    div.commands a { color:#555; text-decoration:none; }\\n    .user div.commands a { color: black; }\\n    #summary { background: #ffc; }\\n    #summary h2 { font-weight: normal; color: #666; }\\n    #explanation { background:#eee; }\\n    #template, #template-not-exist { background:#f6f6f6; }\\n    #template-not-exist ul { margin: 0 0 10px 20px; }\\n    #template-not-exist .postmortem-section { margin-bottom: 3px; }\\n    #unicode-hint { background:#eee; }\\n    #traceback { background:#eee; }\\n    #requestinfo { background:#f6f6f6; padding-left:120px; }\\n    #summary table { border:none; background:transparent; }\\n    #requestinfo h2, #requestinfo h3 { position:relative; margin-left:-100px; }\\n    #requestinfo h3 { margin-bottom:-1em; }\\n    .error { background: #ffc; }\\n    .specific { color:#cc3300; font-weight:bold; }\\n    h2 span.commands { font-size:.7em; font-weight:normal; }\\n    span.commands a:link {color:#5E5694;}\\n    pre.exception_value { font-family: sans-serif; color: #575757; font-size: 1.5em; margin: 10px 0 10px 0; }\\n    .append-bottom { margin-bottom: 10px; }\\n    .fname { user-select: all; }\\n  </style>\\n  \\n  <script>\\n    function hideAll(elems) {\\n      for (var e = 0; e < elems.length; e++) {\\n        elems[e].style.display = \\'none\\';\\n      }\\n    }\\n    window.onload = function() {\\n      hideAll(document.querySelectorAll(\\'table.vars\\'));\\n      hideAll(document.querySelectorAll(\\'ol.pre-context\\'));\\n      hideAll(document.querySelectorAll(\\'ol.post-context\\'));\\n      hideAll(document.querySelectorAll(\\'div.pastebin\\'));\\n    }\\n    function toggle() {\\n      for (var i = 0; i < arguments.length; i++) {\\n        var e = document.getElementById(arguments[i]);\\n        if (e) {\\n          e.style.display = e.style.display == \\'none\\' ? \\'block\\': \\'none\\';\\n        }\\n      }\\n      return false;\\n    }\\n    function varToggle(link, id) {\\n      toggle(\\'v\\' + id);\\n      var s = link.getElementsByTagName(\\'span\\')[0];\\n      var uarr = String.fromCharCode(0x25b6);\\n      var darr = String.fromCharCode(0x25bc);\\n      s.textContent = s.textContent == uarr ? darr : uarr;\\n      return false;\\n    }\\n    function switchPastebinFriendly(link) {\\n      s1 = \"Switch to copy-and-paste view\";\\n      s2 = \"Switch back to interactive view\";\\n      link.textContent = link.textContent.trim() == s1 ? s2: s1;\\n      toggle(\\'browserTraceback\\', \\'pastebinTraceback\\');\\n      return false;\\n    }\\n  </script>\\n  \\n</head>\\n<body>\\n<div id=\"summary\">\\n  <h1>ValueError\\n       at /test_view/</h1>\\n  <pre class=\"exception_value\">my new error</pre>\\n  <table class=\"meta\">\\n\\n    <tr>\\n      <th>Request Method:</th>\\n      <td>GET</td>\\n    </tr>\\n    <tr>\\n      <th>Request URL:</th>\\n      <td>http://testserver/test_view/</td>\\n    </tr>\\n\\n    <tr>\\n      <th>Django Version:</th>\\n      <td>3.2</td>\\n    </tr>\\n\\n    <tr>\\n      <th>Exception Type:</th>\\n      <td>ValueError</td>\\n    </tr>\\n\\n\\n    <tr>\\n      <th>Exception Value:</th>\\n      <td><pre>my new error</pre></td>\\n    </tr>\\n\\n\\n    <tr>\\n      <th>Exception Location:</th>\\n      <td><span class=\"fname\">/testbed/tests/view_tests/tests/test_debug.py</span>, line 475, in test_reporting_frames_with_suppressed_context</td>\\n    </tr>\\n\\n    <tr>\\n      <th>Python Executable:</th>\\n      <td>/opt/miniconda3/envs/testbed/bin/python</td>\\n    </tr>\\n    <tr>\\n      <th>Python Version:</th>\\n      <td>3.6.13</td>\\n    </tr>\\n    <tr>\\n      <th>Python Path:</th>\\n      <td><pre>[&#x27;/testbed/tests&#x27;,\\n &#x27;/testbed&#x27;,\\n &#x27;/opt/miniconda3/envs/testbed/lib/python36.zip&#x27;,\\n &#x27;/opt/miniconda3/envs/testbed/lib/python3.6&#x27;,\\n &#x27;/opt/miniconda3/envs/testbed/lib/python3.6/lib-dynload&#x27;,\\n &#x27;/opt/miniconda3/envs/testbed/lib/python3.6/site-packages&#x27;]</pre></td>\\n    </tr>\\n    <tr>\\n      <th>Server time:</th>\\n      <td>Mon, 16 Nov 2026 01:46:20 -0600</td>\\n    </tr>\\n  </table>\\n</div>\\n\\n\\n\\n\\n<div id=\"traceback\">\\n  <h2>Traceback <span class=\"commands\"><a href=\"#\" onclick=\"return switchPastebinFriendly(this);\">\\n    Switch to copy-and-paste view</a></span>\\n  </h2>\\n  <div id=\"browserTraceback\">\\n    <ul class=\"traceback\">\\n      \\n        \\n        <li class=\"frame user\">\\n          <code class=\"fname\">/testbed/tests/view_tests/tests/test_debug.py</code>, line 475, in test_reporting_frames_with_suppressed_context\\n\\n          \\n            <div class=\"context\" id=\"c140737445614216\">\\n              \\n                <ol start=\"468\" class=\"pre-context\" id=\"pre140737445614216\">\\n                \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>        self.assertNotIn(&#x27;During handling of the above exception&#x27;, html)</pre></li>\\n                \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre></pre></li>\\n                \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>    def test_reporting_frames_with_suppressed_context(self):</pre></li>\\n                \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>        try:</pre></li>\\n                \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>            try:</pre></li>\\n                \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>                raise RuntimeError(&#x27;my error&#x27;)</pre></li>\\n                \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>            except Exception:</pre></li>\\n                \\n                </ol>\\n              \\n              <ol start=\"475\" class=\"context-line\">\\n                <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>                raise ValueError(&#x27;my new error&#x27;) from None</pre> <span>\\u2026</span></li>\\n              </ol>\\n              \\n                <ol start=\\'476\\' class=\"post-context\" id=\"post140737445614216\">\\n                  \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>        except ValueError:</pre></li>\\n                  \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>            exc_type, exc_value, tb = sys.exc_info()</pre></li>\\n                  \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>        request = self.rf.get(&#x27;/test_view/&#x27;)</pre></li>\\n                  \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>        reporter = ExceptionReporter(request, exc_type, exc_value, tb)</pre></li>\\n                  \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>        frames = reporter.get_traceback_frames()</pre></li>\\n                  \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>        # Only the ValueError is reported, the suppressed RuntimeError isn&#x27;t.</pre></li>\\n                  \\n              </ol>\\n              \\n            </div>\\n          \\n\\n          \\n            <div class=\"commands\">\\n                \\n                    <a href=\"#\" onclick=\"return varToggle(this, \\'140737445614216\\')\"><span>&#x25b6;</span> Local vars</a>\\n                \\n            </div>\\n            <table class=\"vars\" id=\"v140737445614216\">\\n              <thead>\\n                <tr>\\n                  <th>Variable</th>\\n                  <th>Value</th>\\n                </tr>\\n              </thead>\\n              <tbody>\\n                \\n                  <tr>\\n                    <td>exc_type</td>\\n                    <td class=\"code\"><pre>&lt;class &#x27;ValueError&#x27;&gt;</pre></td>\\n                  </tr>\\n                \\n                  <tr>\\n                    <td>exc_value</td>\\n                    <td class=\"code\"><pre>ValueError(&#x27;my new error&#x27;,)</pre></td>\\n                  </tr>\\n                \\n                  <tr>\\n                    <td>frames</td>\\n                    <td class=\"code\"><pre>[{&#x27;context_line&#x27;: &quot;                raise ValueError(&#x27;my new error&#x27;) from None&quot;,\\n  &#x27;exc_cause&#x27;: None,\\n  &#x27;exc_cause_explicit&#x27;: None,\\n  &#x27;filename&#x27;: &#x27;/testbed/tests/view_tests/tests/test_debug.py&#x27;,\\n  &#x27;function&#x27;: &#x27;test_reporting_frames_with_suppressed_context&#x27;,\\n  &#x27;id&#x27;: 140737445614216,\\n  &#x27;lineno&#x27;: 475,\\n  &#x27;post_context&#x27;: [&#x27;        except ValueError:&#x27;,\\n                   &#x27;            exc_type, exc_value, tb = sys.exc_info()&#x27;,\\n                   &quot;        request = self.rf.get(&#x27;/test_view/&#x27;)&quot;,\\n                   &#x27;        reporter = ExceptionReporter(request, exc_type, &#x27;\\n                   &#x27;exc_value, tb)&#x27;,\\n                   &#x27;        frames = reporter.get_traceback_frames()&#x27;,\\n                   &#x27;        # Only the ValueError is reported, the suppressed &#x27;\\n                   &quot;RuntimeError isn&#x27;t.&quot;],\\n  &#x27;pre_context&#x27;: [&quot;        self.assertNotIn(&#x27;During handling of the above &quot;\\n                  &quot;exception&#x27;, html)&quot;,\\n                  &#x27;&#x27;,\\n                  &#x27;    def &#x27;\\n                  &#x27;test_reporting_frames_with_suppressed_context(self):&#x27;,\\n                  &#x27;        try:&#x27;,\\n                  &#x27;            try:&#x27;,\\n                  &quot;                raise RuntimeError(&#x27;my error&#x27;)&quot;,\\n                  &#x27;            except Exception:&#x27;],\\n  &#x27;pre_context_lineno&#x27;: 468,\\n  &#x27;tb&#x27;: &lt;traceback object at 0x7ffffd73d288&gt;,\\n  &#x27;type&#x27;: &#x27;user&#x27;,\\n  &#x27;vars&#x27;: dict_items([(&#x27;reporter&#x27;, &lt;django.views.debug.ExceptionReporter object at 0x7ffffd205630&gt;), (&#x27;request&#x27;, &lt;WSGIRequest: GET &#x27;/test_view/&#x27;&gt;), (&#x27;tb&#x27;, &lt;traceback object at 0x7ffffd73d288&gt;), (&#x27;exc_value&#x27;, ValueError(&#x27;my new error&#x27;,)), (&#x27;exc_type&#x27;, &lt;class &#x27;ValueError&#x27;&gt;), (&#x27;self&#x27;, &lt;view_tests.tests.test_debug.ExceptionReporterTests testMethod=test_reporting_frames_with_suppressed_context&gt;)])}]</pre></td>\\n                  </tr>\\n                \\n                  <tr>\\n                    <td>reporter</td>\\n                    <td class=\"code\"><pre>&lt;django.views.debug.ExceptionReporter object at 0x7ffffd205630&gt;</pre></td>\\n                  </tr>\\n                \\n                  <tr>\\n                    <td>request</td>\\n                    <td class=\"code\"><pre>&lt;WSGIRequest: GET &#x27;/test_view/&#x27;&gt;</pre></td>\\n                  </tr>\\n                \\n                  <tr>\\n                    <td>self</td>\\n                    <td class=\"code\"><pre>&lt;view_tests.tests.test_debug.ExceptionReporterTests testMethod=test_reporting_frames_with_suppressed_context&gt;</pre></td>\\n                  </tr>\\n                \\n                  <tr>\\n                    <td>tb</td>\\n                    <td class=\"code\"><pre>&lt;traceback object at 0x7ffffd73d288&gt;</pre></td>\\n                  </tr>\\n                \\n              </tbody>\\n            </table>\\n          \\n        </li>\\n      \\n    </ul>\\n  </div>\\n  <form action=\"https://dpaste.com/\" name=\"pasteform\" id=\"pasteform\" method=\"post\">\\n\\n  <div id=\"pastebinTraceback\" class=\"pastebin\">\\n    <input type=\"hidden\" name=\"language\" value=\"PythonConsole\">\\n    <input type=\"hidden\" name=\"title\"\\n      value=\"ValueError at /test_view/\">\\n    <input type=\"hidden\" name=\"source\" value=\"Django Dpaste Agent\">\\n    <input type=\"hidden\" name=\"poster\" value=\"Django\">\\n    <textarea name=\"content\" id=\"traceback_area\" cols=\"140\" rows=\"25\">\\nEnvironment:\\n\\n\\nRequest Method: GET\\nRequest URL: http://testserver/test_view/\\n\\nDjango Version: 3.2\\nPython Version: 3.6.13\\nInstalled Applications:\\n[&#x27;django.contrib.contenttypes&#x27;,\\n &#x27;django.contrib.auth&#x27;,\\n &#x27;django.contrib.sites&#x27;,\\n &#x27;django.contrib.sessions&#x27;,\\n &#x27;django.contrib.messages&#x27;,\\n &#x27;django.contrib.admin.apps.SimpleAdminConfig&#x27;,\\n &#x27;django.contrib.staticfiles&#x27;,\\n &#x27;view_tests&#x27;]\\nInstalled Middleware:\\n[&#x27;django.contrib.sessions.middleware.SessionMiddleware&#x27;,\\n &#x27;django.middleware.common.CommonMiddleware&#x27;,\\n &#x27;django.middleware.csrf.CsrfViewMiddleware&#x27;,\\n &#x27;django.contrib.auth.middleware.AuthenticationMiddleware&#x27;,\\n &#x27;django.contrib.messages.middleware.MessageMiddleware&#x27;]\\n\\n\\n\\nTraceback (most recent call last):\\n  File \"/testbed/tests/view_tests/tests/test_debug.py\", line 475, in test_reporting_frames_with_suppressed_context\\n    raise ValueError(&#x27;my new error&#x27;) from None\\n\\nException Type: ValueError at /test_view/\\nException Value: my new error\\n</textarea>\\n  <br><br>\\n  <input type=\"submit\" value=\"Share this traceback on a public website\">\\n  </div>\\n</form>\\n</div>\\n\\n\\n\\n<div id=\"requestinfo\">\\n  <h2>Request information</h2>\\n\\n\\n  \\n    <h3 id=\"user-info\">USER</h3>\\n    <p>[unable to retrieve the current user]</p>\\n  \\n\\n  <h3 id=\"get-info\">GET</h3>\\n  \\n    <p>No GET data</p>\\n  \\n\\n  <h3 id=\"post-info\">POST</h3>\\n  \\n    <p>No POST data</p>\\n  \\n  <h3 id=\"files-info\">FILES</h3>\\n  \\n    <p>No FILES data</p>\\n  \\n\\n\\n  <h3 id=\"cookie-info\">COOKIES</h3>\\n  \\n    <p>No cookie data</p>\\n  \\n\\n  <h3 id=\"meta-info\">META</h3>\\n  <table class=\"req\">\\n    <thead>\\n      <tr>\\n        <th>Variable</th>\\n        <th>Value</th>\\n      </tr>\\n    </thead>\\n    <tbody>\\n      \\n        <tr>\\n          <td>HTTP_COOKIE</td>\\n          <td class=\"code\"><pre>&#x27;&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>PATH_INFO</td>\\n          <td class=\"code\"><pre>&#x27;/test_view/&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>QUERY_STRING</td>\\n          <td class=\"code\"><pre>&#x27;&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>REMOTE_ADDR</td>\\n          <td class=\"code\"><pre>&#x27;127.0.0.1&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>REQUEST_METHOD</td>\\n          <td class=\"code\"><pre>&#x27;GET&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SCRIPT_NAME</td>\\n          <td class=\"code\"><pre>&#x27;&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SERVER_NAME</td>\\n          <td class=\"code\"><pre>&#x27;testserver&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SERVER_PORT</td>\\n          <td class=\"code\"><pre>&#x27;80&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SERVER_PROTOCOL</td>\\n          <td class=\"code\"><pre>&#x27;HTTP/1.1&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>wsgi.errors</td>\\n          <td class=\"code\"><pre>&lt;_io.BytesIO object at 0x7ffffd717468&gt;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>wsgi.input</td>\\n          <td class=\"code\"><pre>&lt;django.test.client.FakePayload object at 0x7ffffd205518&gt;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>wsgi.multiprocess</td>\\n          <td class=\"code\"><pre>True</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>wsgi.multithread</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>wsgi.run_once</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>wsgi.url_scheme</td>\\n          <td class=\"code\"><pre>&#x27;http&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>wsgi.version</td>\\n          <td class=\"code\"><pre>(1, 0)</pre></td>\\n        </tr>\\n      \\n    </tbody>\\n  </table>\\n\\n\\n  <h3 id=\"settings-info\">Settings</h3>\\n  <h4>Using settings module <code>test_sqlite</code></h4>\\n  <table class=\"req\">\\n    <thead>\\n      <tr>\\n        <th>Setting</th>\\n        <th>Value</th>\\n      </tr>\\n    </thead>\\n    <tbody>\\n      \\n        <tr>\\n          <td>ABSOLUTE_URL_OVERRIDES</td>\\n          <td class=\"code\"><pre>{}</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>ADMINS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>ALLOWED_HOSTS</td>\\n          <td class=\"code\"><pre>[&#x27;testserver&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>APPEND_SLASH</td>\\n          <td class=\"code\"><pre>True</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>AUTHENTICATION_BACKENDS</td>\\n          <td class=\"code\"><pre>[&#x27;django.contrib.auth.backends.ModelBackend&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>AUTH_PASSWORD_VALIDATORS</td>\\n          <td class=\"code\"><pre>&#x27;********************&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>AUTH_USER_MODEL</td>\\n          <td class=\"code\"><pre>&#x27;auth.User&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CACHES</td>\\n          <td class=\"code\"><pre>{&#x27;default&#x27;: {&#x27;BACKEND&#x27;: &#x27;django.core.cache.backends.locmem.LocMemCache&#x27;}}</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CACHE_MIDDLEWARE_ALIAS</td>\\n          <td class=\"code\"><pre>&#x27;default&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CACHE_MIDDLEWARE_KEY_PREFIX</td>\\n          <td class=\"code\"><pre>&#x27;********************&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CACHE_MIDDLEWARE_SECONDS</td>\\n          <td class=\"code\"><pre>600</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_COOKIE_AGE</td>\\n          <td class=\"code\"><pre>31449600</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_COOKIE_DOMAIN</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_COOKIE_HTTPONLY</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_COOKIE_NAME</td>\\n          <td class=\"code\"><pre>&#x27;csrftoken&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_COOKIE_PATH</td>\\n          <td class=\"code\"><pre>&#x27;/&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_COOKIE_SAMESITE</td>\\n          <td class=\"code\"><pre>&#x27;Lax&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_COOKIE_SECURE</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_FAILURE_VIEW</td>\\n          <td class=\"code\"><pre>&#x27;django.views.csrf.csrf_failure&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_HEADER_NAME</td>\\n          <td class=\"code\"><pre>&#x27;HTTP_X_CSRFTOKEN&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_TRUSTED_ORIGINS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_USE_SESSIONS</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DATABASES</td>\\n          <td class=\"code\"><pre>{&#x27;default&#x27;: {&#x27;ATOMIC_REQUESTS&#x27;: False,\\n             &#x27;AUTOCOMMIT&#x27;: True,\\n             &#x27;CONN_MAX_AGE&#x27;: 0,\\n             &#x27;ENGINE&#x27;: &#x27;django.db.backends.sqlite3&#x27;,\\n             &#x27;HOST&#x27;: &#x27;&#x27;,\\n             &#x27;NAME&#x27;: &#x27;&#x27;,\\n             &#x27;OPTIONS&#x27;: {},\\n             &#x27;PASSWORD&#x27;: &#x27;********************&#x27;,\\n             &#x27;PORT&#x27;: &#x27;&#x27;,\\n             &#x27;TEST&#x27;: {&#x27;CHARSET&#x27;: None,\\n                      &#x27;COLLATION&#x27;: None,\\n                      &#x27;MIGRATE&#x27;: True,\\n                      &#x27;MIRROR&#x27;: None,\\n                      &#x27;NAME&#x27;: None},\\n             &#x27;TIME_ZONE&#x27;: None,\\n             &#x27;USER&#x27;: &#x27;&#x27;},\\n &#x27;other&#x27;: {&#x27;ATOMIC_REQUESTS&#x27;: False,\\n           &#x27;AUTOCOMMIT&#x27;: True,\\n           &#x27;CONN_MAX_AGE&#x27;: 0,\\n           &#x27;ENGINE&#x27;: &#x27;django.db.backends.sqlite3&#x27;,\\n           &#x27;HOST&#x27;: &#x27;&#x27;,\\n           &#x27;NAME&#x27;: &#x27;&#x27;,\\n           &#x27;OPTIONS&#x27;: {},\\n           &#x27;PASSWORD&#x27;: &#x27;********************&#x27;,\\n           &#x27;PORT&#x27;: &#x27;&#x27;,\\n           &#x27;TEST&#x27;: {&#x27;CHARSET&#x27;: None,\\n                    &#x27;COLLATION&#x27;: None,\\n                    &#x27;MIGRATE&#x27;: True,\\n                    &#x27;MIRROR&#x27;: None,\\n                    &#x27;NAME&#x27;: None},\\n           &#x27;TIME_ZONE&#x27;: None,\\n           &#x27;USER&#x27;: &#x27;&#x27;}}</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DATABASE_ROUTERS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DATA_UPLOAD_MAX_MEMORY_SIZE</td>\\n          <td class=\"code\"><pre>2621440</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DATA_UPLOAD_MAX_NUMBER_FIELDS</td>\\n          <td class=\"code\"><pre>1000</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DATETIME_FORMAT</td>\\n          <td class=\"code\"><pre>&#x27;N j, Y, P&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DATETIME_INPUT_FORMATS</td>\\n          <td class=\"code\"><pre>[&#x27;%Y-%m-%d %H:%M:%S&#x27;,\\n &#x27;%Y-%m-%d %H:%M:%S.%f&#x27;,\\n &#x27;%Y-%m-%d %H:%M&#x27;,\\n &#x27;%m/%d/%Y %H:%M:%S&#x27;,\\n &#x27;%m/%d/%Y %H:%M:%S.%f&#x27;,\\n &#x27;%m/%d/%Y %H:%M&#x27;,\\n &#x27;%m/%d/%y %H:%M:%S&#x27;,\\n &#x27;%m/%d/%y %H:%M:%S.%f&#x27;,\\n &#x27;%m/%d/%y %H:%M&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DATE_FORMAT</td>\\n          <td class=\"code\"><pre>&#x27;N j, Y&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DATE_INPUT_FORMATS</td>\\n          <td class=\"code\"><pre>[&#x27;%Y-%m-%d&#x27;,\\n &#x27;%m/%d/%Y&#x27;,\\n &#x27;%m/%d/%y&#x27;,\\n &#x27;%b %d %Y&#x27;,\\n &#x27;%b %d, %Y&#x27;,\\n &#x27;%d %b %Y&#x27;,\\n &#x27;%d %b, %Y&#x27;,\\n &#x27;%B %d %Y&#x27;,\\n &#x27;%B %d, %Y&#x27;,\\n &#x27;%d %B %Y&#x27;,\\n &#x27;%d %B, %Y&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEBUG</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEBUG_PROPAGATE_EXCEPTIONS</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DECIMAL_SEPARATOR</td>\\n          <td class=\"code\"><pre>&#x27;.&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEFAULT_CHARSET</td>\\n          <td class=\"code\"><pre>&#x27;utf-8&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEFAULT_EXCEPTION_REPORTER</td>\\n          <td class=\"code\"><pre>&#x27;django.views.debug.ExceptionReporter&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEFAULT_EXCEPTION_REPORTER_FILTER</td>\\n          <td class=\"code\"><pre>&#x27;django.views.debug.SafeExceptionReporterFilter&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEFAULT_FILE_STORAGE</td>\\n          <td class=\"code\"><pre>&#x27;django.core.files.storage.FileSystemStorage&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEFAULT_FROM_EMAIL</td>\\n          <td class=\"code\"><pre>&#x27;webmaster@localhost&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEFAULT_HASHING_ALGORITHM</td>\\n          <td class=\"code\"><pre>&#x27;sha256&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEFAULT_INDEX_TABLESPACE</td>\\n          <td class=\"code\"><pre>&#x27;&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEFAULT_TABLESPACE</td>\\n          <td class=\"code\"><pre>&#x27;&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DISALLOWED_USER_AGENTS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_BACKEND</td>\\n          <td class=\"code\"><pre>&#x27;django.core.mail.backends.locmem.EmailBackend&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_HOST</td>\\n          <td class=\"code\"><pre>&#x27;localhost&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_HOST_PASSWORD</td>\\n          <td class=\"code\"><pre>&#x27;********************&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_HOST_USER</td>\\n          <td class=\"code\"><pre>&#x27;&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_PORT</td>\\n          <td class=\"code\"><pre>25</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_SSL_CERTFILE</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_SSL_KEYFILE</td>\\n          <td class=\"code\"><pre>&#x27;********************&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_SUBJECT_PREFIX</td>\\n          <td class=\"code\"><pre>&#x27;[Django] &#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_TIMEOUT</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_USE_LOCALTIME</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_USE_SSL</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_USE_TLS</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FILE_UPLOAD_DIRECTORY_PERMISSIONS</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FILE_UPLOAD_HANDLERS</td>\\n          <td class=\"code\"><pre>[&#x27;django.core.files.uploadhandler.MemoryFileUploadHandler&#x27;,\\n &#x27;django.core.files.uploadhandler.TemporaryFileUploadHandler&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FILE_UPLOAD_MAX_MEMORY_SIZE</td>\\n          <td class=\"code\"><pre>2621440</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FILE_UPLOAD_PERMISSIONS</td>\\n          <td class=\"code\"><pre>420</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FILE_UPLOAD_TEMP_DIR</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FIRST_DAY_OF_WEEK</td>\\n          <td class=\"code\"><pre>0</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FIXTURE_DIRS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FORCE_SCRIPT_NAME</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FORMAT_MODULE_PATH</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FORM_RENDERER</td>\\n          <td class=\"code\"><pre>&#x27;django.forms.renderers.DjangoTemplates&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>IGNORABLE_404_URLS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>INSTALLED_APPS</td>\\n          <td class=\"code\"><pre>[&#x27;django.contrib.contenttypes&#x27;,\\n &#x27;django.contrib.auth&#x27;,\\n &#x27;django.contrib.sites&#x27;,\\n &#x27;django.contrib.sessions&#x27;,\\n &#x27;django.contrib.messages&#x27;,\\n &#x27;django.contrib.admin.apps.SimpleAdminConfig&#x27;,\\n &#x27;django.contrib.staticfiles&#x27;,\\n &#x27;view_tests&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>INTERNAL_IPS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGES</td>\\n          <td class=\"code\"><pre>[(&#x27;af&#x27;, &#x27;Afrikaans&#x27;),\\n (&#x27;ar&#x27;, &#x27;Arabic&#x27;),\\n (&#x27;ar-dz&#x27;, &#x27;Algerian Arabic&#x27;),\\n (&#x27;ast&#x27;, &#x27;Asturian&#x27;),\\n (&#x27;az&#x27;, &#x27;Azerbaijani&#x27;),\\n (&#x27;bg&#x27;, &#x27;Bulgarian&#x27;),\\n (&#x27;be&#x27;, &#x27;Belarusian&#x27;),\\n (&#x27;bn&#x27;, &#x27;Bengali&#x27;),\\n (&#x27;br&#x27;, &#x27;Breton&#x27;),\\n (&#x27;bs&#x27;, &#x27;Bosnian&#x27;),\\n (&#x27;ca&#x27;, &#x27;Catalan&#x27;),\\n (&#x27;cs&#x27;, &#x27;Czech&#x27;),\\n (&#x27;cy&#x27;, &#x27;Welsh&#x27;),\\n (&#x27;da&#x27;, &#x27;Danish&#x27;),\\n (&#x27;de&#x27;, &#x27;German&#x27;),\\n (&#x27;dsb&#x27;, &#x27;Lower Sorbian&#x27;),\\n (&#x27;el&#x27;, &#x27;Greek&#x27;),\\n (&#x27;en&#x27;, &#x27;English&#x27;),\\n (&#x27;en-au&#x27;, &#x27;Australian English&#x27;),\\n (&#x27;en-gb&#x27;, &#x27;British English&#x27;),\\n (&#x27;eo&#x27;, &#x27;Esperanto&#x27;),\\n (&#x27;es&#x27;, &#x27;Spanish&#x27;),\\n (&#x27;es-ar&#x27;, &#x27;Argentinian Spanish&#x27;),\\n (&#x27;es-co&#x27;, &#x27;Colombian Spanish&#x27;),\\n (&#x27;es-mx&#x27;, &#x27;Mexican Spanish&#x27;),\\n (&#x27;es-ni&#x27;, &#x27;Nicaraguan Spanish&#x27;),\\n (&#x27;es-ve&#x27;, &#x27;Venezuelan Spanish&#x27;),\\n (&#x27;et&#x27;, &#x27;Estonian&#x27;),\\n (&#x27;eu&#x27;, &#x27;Basque&#x27;),\\n (&#x27;fa&#x27;, &#x27;Persian&#x27;),\\n (&#x27;fi&#x27;, &#x27;Finnish&#x27;),\\n (&#x27;fr&#x27;, &#x27;French&#x27;),\\n (&#x27;fy&#x27;, &#x27;Frisian&#x27;),\\n (&#x27;ga&#x27;, &#x27;Irish&#x27;),\\n (&#x27;gd&#x27;, &#x27;Scottish Gaelic&#x27;),\\n (&#x27;gl&#x27;, &#x27;Galician&#x27;),\\n (&#x27;he&#x27;, &#x27;Hebrew&#x27;),\\n (&#x27;hi&#x27;, &#x27;Hindi&#x27;),\\n (&#x27;hr&#x27;, &#x27;Croatian&#x27;),\\n (&#x27;hsb&#x27;, &#x27;Upper Sorbian&#x27;),\\n (&#x27;hu&#x27;, &#x27;Hungarian&#x27;),\\n (&#x27;hy&#x27;, &#x27;Armenian&#x27;),\\n (&#x27;ia&#x27;, &#x27;Interlingua&#x27;),\\n (&#x27;id&#x27;, &#x27;Indonesian&#x27;),\\n (&#x27;ig&#x27;, &#x27;Igbo&#x27;),\\n (&#x27;io&#x27;, &#x27;Ido&#x27;),\\n (&#x27;is&#x27;, &#x27;Icelandic&#x27;),\\n (&#x27;it&#x27;, &#x27;Italian&#x27;),\\n (&#x27;ja&#x27;, &#x27;Japanese&#x27;),\\n (&#x27;ka&#x27;, &#x27;Georgian&#x27;),\\n (&#x27;kab&#x27;, &#x27;Kabyle&#x27;),\\n (&#x27;kk&#x27;, &#x27;Kazakh&#x27;),\\n (&#x27;km&#x27;, &#x27;Khmer&#x27;),\\n (&#x27;kn&#x27;, &#x27;Kannada&#x27;),\\n (&#x27;ko&#x27;, &#x27;Korean&#x27;),\\n (&#x27;ky&#x27;, &#x27;Kyrgyz&#x27;),\\n (&#x27;lb&#x27;, &#x27;Luxembourgish&#x27;),\\n (&#x27;lt&#x27;, &#x27;Lithuanian&#x27;),\\n (&#x27;lv&#x27;, &#x27;Latvian&#x27;),\\n (&#x27;mk&#x27;, &#x27;Macedonian&#x27;),\\n (&#x27;ml&#x27;, &#x27;Malayalam&#x27;),\\n (&#x27;mn&#x27;, &#x27;Mongolian&#x27;),\\n (&#x27;mr&#x27;, &#x27;Marathi&#x27;),\\n (&#x27;my&#x27;, &#x27;Burmese&#x27;),\\n (&#x27;nb&#x27;, &#x27;Norwegian Bokm\\xe5l&#x27;),\\n (&#x27;ne&#x27;, &#x27;Nepali&#x27;),\\n (&#x27;nl&#x27;, &#x27;Dutch&#x27;),\\n (&#x27;nn&#x27;, &#x27;Norwegian Nynorsk&#x27;),\\n (&#x27;os&#x27;, &#x27;Ossetic&#x27;),\\n (&#x27;pa&#x27;, &#x27;Punjabi&#x27;),\\n (&#x27;pl&#x27;, &#x27;Polish&#x27;),\\n (&#x27;pt&#x27;, &#x27;Portuguese&#x27;),\\n (&#x27;pt-br&#x27;, &#x27;Brazilian Portuguese&#x27;),\\n (&#x27;ro&#x27;, &#x27;Romanian&#x27;),\\n (&#x27;ru&#x27;, &#x27;Russian&#x27;),\\n (&#x27;sk&#x27;, &#x27;Slovak&#x27;),\\n (&#x27;sl&#x27;, &#x27;Slovenian&#x27;),\\n (&#x27;sq&#x27;, &#x27;Albanian&#x27;),\\n (&#x27;sr&#x27;, &#x27;Serbian&#x27;),\\n (&#x27;sr-latn&#x27;, &#x27;Serbian Latin&#x27;),\\n (&#x27;sv&#x27;, &#x27;Swedish&#x27;),\\n (&#x27;sw&#x27;, &#x27;Swahili&#x27;),\\n (&#x27;ta&#x27;, &#x27;Tamil&#x27;),\\n (&#x27;te&#x27;, &#x27;Telugu&#x27;),\\n (&#x27;tg&#x27;, &#x27;Tajik&#x27;),\\n (&#x27;th&#x27;, &#x27;Thai&#x27;),\\n (&#x27;tk&#x27;, &#x27;Turkmen&#x27;),\\n (&#x27;tr&#x27;, &#x27;Turkish&#x27;),\\n (&#x27;tt&#x27;, &#x27;Tatar&#x27;),\\n (&#x27;udm&#x27;, &#x27;Udmurt&#x27;),\\n (&#x27;uk&#x27;, &#x27;Ukrainian&#x27;),\\n (&#x27;ur&#x27;, &#x27;Urdu&#x27;),\\n (&#x27;uz&#x27;, &#x27;Uzbek&#x27;),\\n (&#x27;vi&#x27;, &#x27;Vietnamese&#x27;),\\n (&#x27;zh-hans&#x27;, &#x27;Simplified Chinese&#x27;),\\n (&#x27;zh-hant&#x27;, &#x27;Traditional Chinese&#x27;)]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGES_BIDI</td>\\n          <td class=\"code\"><pre>[&#x27;he&#x27;, &#x27;ar&#x27;, &#x27;ar-dz&#x27;, &#x27;fa&#x27;, &#x27;ur&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGE_CODE</td>\\n          <td class=\"code\"><pre>&#x27;en&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGE_COOKIE_AGE</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGE_COOKIE_DOMAIN</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGE_COOKIE_HTTPONLY</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGE_COOKIE_NAME</td>\\n          <td class=\"code\"><pre>&#x27;django_language&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGE_COOKIE_PATH</td>\\n          <td class=\"code\"><pre>&#x27;/&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGE_COOKIE_SAMESITE</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGE_COOKIE_SECURE</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LOCALE_PATHS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LOGGING</td>\\n          <td class=\"code\"><pre>{&#x27;disable_existing_loggers&#x27;: False,\\n &#x27;filters&#x27;: {&#x27;require_debug_false&#x27;: {&#x27;()&#x27;: &#x27;django.utils.log.RequireDebugFalse&#x27;},\\n             &#x27;require_debug_true&#x27;: {&#x27;()&#x27;: &#x27;django.utils.log.RequireDebugTrue&#x27;}},\\n &#x27;formatters&#x27;: {&#x27;django.server&#x27;: {&#x27;()&#x27;: &#x27;django.utils.log.ServerFormatter&#x27;,\\n                                  &#x27;format&#x27;: &#x27;[{server_time}] {message}&#x27;,\\n                                  &#x27;style&#x27;: &#x27;{&#x27;}},\\n &#x27;handlers&#x27;: {&#x27;console&#x27;: {&#x27;class&#x27;: &#x27;logging.StreamHandler&#x27;,\\n                          &#x27;filters&#x27;: [&#x27;require_debug_true&#x27;],\\n                          &#x27;level&#x27;: &#x27;INFO&#x27;},\\n              &#x27;django.server&#x27;: {&#x27;class&#x27;: &#x27;logging.StreamHandler&#x27;,\\n                                &#x27;formatter&#x27;: &#x27;django.server&#x27;,\\n                                &#x27;level&#x27;: &#x27;INFO&#x27;},\\n              &#x27;mail_admins&#x27;: {&#x27;class&#x27;: &#x27;django.utils.log.AdminEmailHandler&#x27;,\\n                              &#x27;filters&#x27;: [&#x27;require_debug_false&#x27;],\\n                              &#x27;level&#x27;: &#x27;ERROR&#x27;}},\\n &#x27;loggers&#x27;: {&#x27;django&#x27;: {&#x27;handlers&#x27;: [&#x27;console&#x27;, &#x27;mail_admins&#x27;],\\n                        &#x27;level&#x27;: &#x27;ERROR&#x27;},\\n             &#x27;django.server&#x27;: {&#x27;handlers&#x27;: [&#x27;django.server&#x27;],\\n                               &#x27;level&#x27;: &#x27;INFO&#x27;,\\n                               &#x27;propagate&#x27;: False}},\\n &#x27;version&#x27;: 1}</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LOGGING_CONFIG</td>\\n          <td class=\"code\"><pre>&#x27;logging.config.dictConfig&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LOGIN_REDIRECT_URL</td>\\n          <td class=\"code\"><pre>&#x27;/accounts/profile/&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LOGIN_URL</td>\\n          <td class=\"code\"><pre>&#x27;/accounts/login/&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LOGOUT_REDIRECT_URL</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>MANAGERS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>MEDIA_ROOT</td>\\n          <td class=\"code\"><pre>&#x27;&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>MEDIA_URL</td>\\n          <td class=\"code\"><pre>&#x27;/&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>MESSAGE_STORAGE</td>\\n          <td class=\"code\"><pre>&#x27;django.contrib.messages.storage.fallback.FallbackStorage&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>MIDDLEWARE</td>\\n          <td class=\"code\"><pre>[&#x27;django.contrib.sessions.middleware.SessionMiddleware&#x27;,\\n &#x27;django.middleware.common.CommonMiddleware&#x27;,\\n &#x27;django.middleware.csrf.CsrfViewMiddleware&#x27;,\\n &#x27;django.contrib.auth.middleware.AuthenticationMiddleware&#x27;,\\n &#x27;django.contrib.messages.middleware.MessageMiddleware&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>MIGRATION_MODULES</td>\\n          <td class=\"code\"><pre>{&#x27;auth&#x27;: None, &#x27;contenttypes&#x27;: None, &#x27;sessions&#x27;: None}</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>MONTH_DAY_FORMAT</td>\\n          <td class=\"code\"><pre>&#x27;F j&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>NUMBER_GROUPING</td>\\n          <td class=\"code\"><pre>0</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>PASSWORD_HASHERS</td>\\n          <td class=\"code\"><pre>&#x27;********************&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>PASSWORD_RESET_TIMEOUT</td>\\n          <td class=\"code\"><pre>&#x27;********************&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>PASSWORD_RESET_TIMEOUT_DAYS</td>\\n          <td class=\"code\"><pre>&#x27;********************&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>PREPEND_WWW</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>ROOT_URLCONF</td>\\n          <td class=\"code\"><pre>&#x27;urls&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECRET_KEY</td>\\n          <td class=\"code\"><pre>&#x27;********************&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_BROWSER_XSS_FILTER</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_CONTENT_TYPE_NOSNIFF</td>\\n          <td class=\"code\"><pre>True</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_HSTS_INCLUDE_SUBDOMAINS</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_HSTS_PRELOAD</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_HSTS_SECONDS</td>\\n          <td class=\"code\"><pre>0</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_PROXY_SSL_HEADER</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_REDIRECT_EXEMPT</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_REFERRER_POLICY</td>\\n          <td class=\"code\"><pre>&#x27;same-origin&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_SSL_HOST</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_SSL_REDIRECT</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SERVER_EMAIL</td>\\n          <td class=\"code\"><pre>&#x27;root@localhost&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_CACHE_ALIAS</td>\\n          <td class=\"code\"><pre>&#x27;default&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_COOKIE_AGE</td>\\n          <td class=\"code\"><pre>1209600</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_COOKIE_DOMAIN</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_COOKIE_HTTPONLY</td>\\n          <td class=\"code\"><pre>True</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_COOKIE_NAME</td>\\n          <td class=\"code\"><pre>&#x27;sessionid&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_COOKIE_PATH</td>\\n          <td class=\"code\"><pre>&#x27;/&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_COOKIE_SAMESITE</td>\\n          <td class=\"code\"><pre>&#x27;Lax&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_COOKIE_SECURE</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_ENGINE</td>\\n          <td class=\"code\"><pre>&#x27;django.contrib.sessions.backends.db&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_EXPIRE_AT_BROWSER_CLOSE</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_FILE_PATH</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_SAVE_EVERY_REQUEST</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_SERIALIZER</td>\\n          <td class=\"code\"><pre>&#x27;django.contrib.sessions.serializers.JSONSerializer&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SETTINGS_MODULE</td>\\n          <td class=\"code\"><pre>&#x27;test_sqlite&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SHORT_DATETIME_FORMAT</td>\\n          <td class=\"code\"><pre>&#x27;m/d/Y P&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SHORT_DATE_FORMAT</td>\\n          <td class=\"code\"><pre>&#x27;m/d/Y&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SIGNING_BACKEND</td>\\n          <td class=\"code\"><pre>&#x27;django.core.signing.TimestampSigner&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SILENCED_SYSTEM_CHECKS</td>\\n          <td class=\"code\"><pre>[&#x27;fields.W342&#x27;, &#x27;fields.W903&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SITE_ID</td>\\n          <td class=\"code\"><pre>1</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>STATICFILES_DIRS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>STATICFILES_FINDERS</td>\\n          <td class=\"code\"><pre>[&#x27;django.contrib.staticfiles.finders.FileSystemFinder&#x27;,\\n &#x27;django.contrib.staticfiles.finders.AppDirectoriesFinder&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>STATICFILES_STORAGE</td>\\n          <td class=\"code\"><pre>&#x27;django.contrib.staticfiles.storage.StaticFilesStorage&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>STATIC_ROOT</td>\\n          <td class=\"code\"><pre>&#x27;/tmp/django_wyjwuadv/static&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>STATIC_URL</td>\\n          <td class=\"code\"><pre>&#x27;/static/&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>TEMPLATES</td>\\n          <td class=\"code\"><pre>[{&#x27;APP_DIRS&#x27;: True,\\n  &#x27;BACKEND&#x27;: &#x27;django.template.backends.django.DjangoTemplates&#x27;,\\n  &#x27;DIRS&#x27;: [&#x27;/testbed/tests/templates&#x27;],\\n  &#x27;OPTIONS&#x27;: {&#x27;context_processors&#x27;: [&#x27;django.template.context_processors.debug&#x27;,\\n                                     &#x27;django.template.context_processors.request&#x27;,\\n                                     &#x27;django.contrib.auth.context_processors.auth&#x27;,\\n                                     &#x27;django.contrib.messages.context_processors.messages&#x27;]}}]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>TEST_NON_SERIALIZED_APPS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>TEST_RUNNER</td>\\n          <td class=\"code\"><pre>&#x27;django.test.runner.DiscoverRunner&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>THOUSAND_SEPARATOR</td>\\n          <td class=\"code\"><pre>&#x27;,&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>TIME_FORMAT</td>\\n          <td class=\"code\"><pre>&#x27;P&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>TIME_INPUT_FORMATS</td>\\n          <td class=\"code\"><pre>[&#x27;%H:%M:%S&#x27;, &#x27;%H:%M:%S.%f&#x27;, &#x27;%H:%M&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>TIME_ZONE</td>\\n          <td class=\"code\"><pre>&#x27;America/Chicago&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>USE_I18N</td>\\n          <td class=\"code\"><pre>True</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>USE_L10N</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>USE_THOUSAND_SEPARATOR</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>USE_TZ</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>USE_X_FORWARDED_HOST</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>USE_X_FORWARDED_PORT</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>WSGI_APPLICATION</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>X_FRAME_OPTIONS</td>\\n          <td class=\"code\"><pre>&#x27;DENY&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>YEAR_MONTH_FORMAT</td>\\n          <td class=\"code\"><pre>&#x27;F Y&#x27;</pre></td>\\n        </tr>\\n      \\n    </tbody>\\n  </table>\\n\\n</div>\\n\\n  <div id=\"explanation\">\\n    <p>\\n      You\\u2019re seeing this error because you have <code>DEBUG = True</code> in your\\n      Django settings file. Change that to <code>False</code>, and Django will\\n      display a standard page generated by the handler for this status code.\\n    </p>\\n  </div>\\n\\n</body>\\n</html>\\n'\n\n======================================================================\nFAIL: test_reporting_frames_with_explicit_cause_and_suppressed_context (view_tests.tests.test_debug.ExceptionReporterTests)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/testbed/tests/view_tests/tests/test_debug.py\", line 503, in test_reporting_frames_with_explicit_cause_and_suppressed_context\n    self.assertEqual(len(frames), 2)\nAssertionError: 0 != 2\n\n======================================================================\nFAIL: test_reporting_frames_with_implicit_context (view_tests.tests.test_debug.ExceptionReporterTests)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/testbed/tests/view_tests/tests/test_debug.py\", line 523, in test_reporting_frames_with_implicit_context\n    self.assertEqual(frames[0]['exc_cause'], exc_value.__context__)\nAssertionError: None != RuntimeError('my error',)\n\n----------------------------------------------------------------------\nRan 3 tests in 0.030s\n\nFAILED (failures=3)\n</output>",
+      "extra": {
+        "raw_output": "System check identified no issues (0 silenced).\nFFF\n======================================================================\nFAIL: test_reporting_frames_with_suppressed_context (view_tests.tests.test_debug.ExceptionReporterTests)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/testbed/tests/view_tests/tests/test_debug.py\", line 485, in test_reporting_frames_with_suppressed_context\n    self.assertNotIn('During handling of the above exception', html)\nAssertionError: 'During handling of the above exception' unexpectedly found in '<!DOCTYPE html>\\n<html lang=\"en\">\\n<head>\\n  <meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\">\\n  <meta name=\"robots\" content=\"NONE,NOARCHIVE\">\\n  <title>ValueError\\n          at /test_view/</title>\\n  <style type=\"text/css\">\\n    html * { padding:0; margin:0; }\\n    body * { padding:10px 20px; }\\n    body * * { padding:0; }\\n    body { font:small sans-serif; background-color:#fff; color:#000; }\\n    body>div { border-bottom:1px solid #ddd; }\\n    h1 { font-weight:normal; }\\n    h2 { margin-bottom:.8em; }\\n    h3 { margin:1em 0 .5em 0; }\\n    h4 { margin:0 0 .5em 0; font-weight: normal; }\\n    code, pre { font-size: 100%; white-space: pre-wrap; }\\n    table { border:1px solid #ccc; border-collapse: collapse; width:100%; background:white; }\\n    tbody td, tbody th { vertical-align:top; padding:2px 3px; }\\n    thead th {\\n      padding:1px 6px 1px 3px; background:#fefefe; text-align:left;\\n      font-weight:normal; font-size:11px; border:1px solid #ddd;\\n    }\\n    tbody th { width:12em; text-align:right; color:#666; padding-right:.5em; }\\n    table.vars { margin:5px 0 2px 40px; }\\n    table.vars td, table.req td { font-family:monospace; }\\n    table td.code { width:100%; }\\n    table td.code pre { overflow:hidden; }\\n    table.source th { color:#666; }\\n    table.source td { font-family:monospace; white-space:pre; border-bottom:1px solid #eee; }\\n    ul.traceback { list-style-type:none; color: #222; }\\n    ul.traceback li.frame { padding-bottom:1em; color:#4f4f4f; }\\n    ul.traceback li.user { background-color:#e0e0e0; color:#000 }\\n    div.context { padding:10px 0; overflow:hidden; }\\n    div.context ol { padding-left:30px; margin:0 10px; list-style-position: inside; }\\n    div.context ol li { font-family:monospace; white-space:pre; color:#777; cursor:pointer; padding-left: 2px; }\\n    div.context ol li pre { display:inline; }\\n    div.context ol.context-line li { color:#464646; background-color:#dfdfdf; padding: 3px 2px; }\\n    div.context ol.context-line li span { position:absolute; right:32px; }\\n    .user div.context ol.context-line li { background-color:#bbb; color:#000; }\\n    .user div.context ol li { color:#666; }\\n    div.commands { margin-left: 40px; }\\n    div.commands a { color:#555; text-decoration:none; }\\n    .user div.commands a { color: black; }\\n    #summary { background: #ffc; }\\n    #summary h2 { font-weight: normal; color: #666; }\\n    #explanation { background:#eee; }\\n    #template, #template-not-exist { background:#f6f6f6; }\\n    #template-not-exist ul { margin: 0 0 10px 20px; }\\n    #template-not-exist .postmortem-section { margin-bottom: 3px; }\\n    #unicode-hint { background:#eee; }\\n    #traceback { background:#eee; }\\n    #requestinfo { background:#f6f6f6; padding-left:120px; }\\n    #summary table { border:none; background:transparent; }\\n    #requestinfo h2, #requestinfo h3 { position:relative; margin-left:-100px; }\\n    #requestinfo h3 { margin-bottom:-1em; }\\n    .error { background: #ffc; }\\n    .specific { color:#cc3300; font-weight:bold; }\\n    h2 span.commands { font-size:.7em; font-weight:normal; }\\n    span.commands a:link {color:#5E5694;}\\n    pre.exception_value { font-family: sans-serif; color: #575757; font-size: 1.5em; margin: 10px 0 10px 0; }\\n    .append-bottom { margin-bottom: 10px; }\\n    .fname { user-select: all; }\\n  </style>\\n  \\n  <script>\\n    function hideAll(elems) {\\n      for (var e = 0; e < elems.length; e++) {\\n        elems[e].style.display = \\'none\\';\\n      }\\n    }\\n    window.onload = function() {\\n      hideAll(document.querySelectorAll(\\'table.vars\\'));\\n      hideAll(document.querySelectorAll(\\'ol.pre-context\\'));\\n      hideAll(document.querySelectorAll(\\'ol.post-context\\'));\\n      hideAll(document.querySelectorAll(\\'div.pastebin\\'));\\n    }\\n    function toggle() {\\n      for (var i = 0; i < arguments.length; i++) {\\n        var e = document.getElementById(arguments[i]);\\n        if (e) {\\n          e.style.display = e.style.display == \\'none\\' ? \\'block\\': \\'none\\';\\n        }\\n      }\\n      return false;\\n    }\\n    function varToggle(link, id) {\\n      toggle(\\'v\\' + id);\\n      var s = link.getElementsByTagName(\\'span\\')[0];\\n      var uarr = String.fromCharCode(0x25b6);\\n      var darr = String.fromCharCode(0x25bc);\\n      s.textContent = s.textContent == uarr ? darr : uarr;\\n      return false;\\n    }\\n    function switchPastebinFriendly(link) {\\n      s1 = \"Switch to copy-and-paste view\";\\n      s2 = \"Switch back to interactive view\";\\n      link.textContent = link.textContent.trim() == s1 ? s2: s1;\\n      toggle(\\'browserTraceback\\', \\'pastebinTraceback\\');\\n      return false;\\n    }\\n  </script>\\n  \\n</head>\\n<body>\\n<div id=\"summary\">\\n  <h1>ValueError\\n       at /test_view/</h1>\\n  <pre class=\"exception_value\">my new error</pre>\\n  <table class=\"meta\">\\n\\n    <tr>\\n      <th>Request Method:</th>\\n      <td>GET</td>\\n    </tr>\\n    <tr>\\n      <th>Request URL:</th>\\n      <td>http://testserver/test_view/</td>\\n    </tr>\\n\\n    <tr>\\n      <th>Django Version:</th>\\n      <td>3.2</td>\\n    </tr>\\n\\n    <tr>\\n      <th>Exception Type:</th>\\n      <td>ValueError</td>\\n    </tr>\\n\\n\\n    <tr>\\n      <th>Exception Value:</th>\\n      <td><pre>my new error</pre></td>\\n    </tr>\\n\\n\\n    <tr>\\n      <th>Exception Location:</th>\\n      <td><span class=\"fname\">/testbed/tests/view_tests/tests/test_debug.py</span>, line 475, in test_reporting_frames_with_suppressed_context</td>\\n    </tr>\\n\\n    <tr>\\n      <th>Python Executable:</th>\\n      <td>/opt/miniconda3/envs/testbed/bin/python</td>\\n    </tr>\\n    <tr>\\n      <th>Python Version:</th>\\n      <td>3.6.13</td>\\n    </tr>\\n    <tr>\\n      <th>Python Path:</th>\\n      <td><pre>[&#x27;/testbed/tests&#x27;,\\n &#x27;/testbed&#x27;,\\n &#x27;/opt/miniconda3/envs/testbed/lib/python36.zip&#x27;,\\n &#x27;/opt/miniconda3/envs/testbed/lib/python3.6&#x27;,\\n &#x27;/opt/miniconda3/envs/testbed/lib/python3.6/lib-dynload&#x27;,\\n &#x27;/opt/miniconda3/envs/testbed/lib/python3.6/site-packages&#x27;]</pre></td>\\n    </tr>\\n    <tr>\\n      <th>Server time:</th>\\n      <td>Mon, 16 Nov 2026 01:46:20 -0600</td>\\n    </tr>\\n  </table>\\n</div>\\n\\n\\n\\n\\n<div id=\"traceback\">\\n  <h2>Traceback <span class=\"commands\"><a href=\"#\" onclick=\"return switchPastebinFriendly(this);\">\\n    Switch to copy-and-paste view</a></span>\\n  </h2>\\n  <div id=\"browserTraceback\">\\n    <ul class=\"traceback\">\\n      \\n        \\n        <li class=\"frame user\">\\n          <code class=\"fname\">/testbed/tests/view_tests/tests/test_debug.py</code>, line 475, in test_reporting_frames_with_suppressed_context\\n\\n          \\n            <div class=\"context\" id=\"c140737445614216\">\\n              \\n                <ol start=\"468\" class=\"pre-context\" id=\"pre140737445614216\">\\n                \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>        self.assertNotIn(&#x27;During handling of the above exception&#x27;, html)</pre></li>\\n                \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre></pre></li>\\n                \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>    def test_reporting_frames_with_suppressed_context(self):</pre></li>\\n                \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>        try:</pre></li>\\n                \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>            try:</pre></li>\\n                \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>                raise RuntimeError(&#x27;my error&#x27;)</pre></li>\\n                \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>            except Exception:</pre></li>\\n                \\n                </ol>\\n              \\n              <ol start=\"475\" class=\"context-line\">\\n                <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>                raise ValueError(&#x27;my new error&#x27;) from None</pre> <span>\\u2026</span></li>\\n              </ol>\\n              \\n                <ol start=\\'476\\' class=\"post-context\" id=\"post140737445614216\">\\n                  \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>        except ValueError:</pre></li>\\n                  \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>            exc_type, exc_value, tb = sys.exc_info()</pre></li>\\n                  \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>        request = self.rf.get(&#x27;/test_view/&#x27;)</pre></li>\\n                  \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>        reporter = ExceptionReporter(request, exc_type, exc_value, tb)</pre></li>\\n                  \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>        frames = reporter.get_traceback_frames()</pre></li>\\n                  \\n                  <li onclick=\"toggle(\\'pre140737445614216\\', \\'post140737445614216\\')\"><pre>        # Only the ValueError is reported, the suppressed RuntimeError isn&#x27;t.</pre></li>\\n                  \\n              </ol>\\n              \\n            </div>\\n          \\n\\n          \\n            <div class=\"commands\">\\n                \\n                    <a href=\"#\" onclick=\"return varToggle(this, \\'140737445614216\\')\"><span>&#x25b6;</span> Local vars</a>\\n                \\n            </div>\\n            <table class=\"vars\" id=\"v140737445614216\">\\n              <thead>\\n                <tr>\\n                  <th>Variable</th>\\n                  <th>Value</th>\\n                </tr>\\n              </thead>\\n              <tbody>\\n                \\n                  <tr>\\n                    <td>exc_type</td>\\n                    <td class=\"code\"><pre>&lt;class &#x27;ValueError&#x27;&gt;</pre></td>\\n                  </tr>\\n                \\n                  <tr>\\n                    <td>exc_value</td>\\n                    <td class=\"code\"><pre>ValueError(&#x27;my new error&#x27;,)</pre></td>\\n                  </tr>\\n                \\n                  <tr>\\n                    <td>frames</td>\\n                    <td class=\"code\"><pre>[{&#x27;context_line&#x27;: &quot;                raise ValueError(&#x27;my new error&#x27;) from None&quot;,\\n  &#x27;exc_cause&#x27;: None,\\n  &#x27;exc_cause_explicit&#x27;: None,\\n  &#x27;filename&#x27;: &#x27;/testbed/tests/view_tests/tests/test_debug.py&#x27;,\\n  &#x27;function&#x27;: &#x27;test_reporting_frames_with_suppressed_context&#x27;,\\n  &#x27;id&#x27;: 140737445614216,\\n  &#x27;lineno&#x27;: 475,\\n  &#x27;post_context&#x27;: [&#x27;        except ValueError:&#x27;,\\n                   &#x27;            exc_type, exc_value, tb = sys.exc_info()&#x27;,\\n                   &quot;        request = self.rf.get(&#x27;/test_view/&#x27;)&quot;,\\n                   &#x27;        reporter = ExceptionReporter(request, exc_type, &#x27;\\n                   &#x27;exc_value, tb)&#x27;,\\n                   &#x27;        frames = reporter.get_traceback_frames()&#x27;,\\n                   &#x27;        # Only the ValueError is reported, the suppressed &#x27;\\n                   &quot;RuntimeError isn&#x27;t.&quot;],\\n  &#x27;pre_context&#x27;: [&quot;        self.assertNotIn(&#x27;During handling of the above &quot;\\n                  &quot;exception&#x27;, html)&quot;,\\n                  &#x27;&#x27;,\\n                  &#x27;    def &#x27;\\n                  &#x27;test_reporting_frames_with_suppressed_context(self):&#x27;,\\n                  &#x27;        try:&#x27;,\\n                  &#x27;            try:&#x27;,\\n                  &quot;                raise RuntimeError(&#x27;my error&#x27;)&quot;,\\n                  &#x27;            except Exception:&#x27;],\\n  &#x27;pre_context_lineno&#x27;: 468,\\n  &#x27;tb&#x27;: &lt;traceback object at 0x7ffffd73d288&gt;,\\n  &#x27;type&#x27;: &#x27;user&#x27;,\\n  &#x27;vars&#x27;: dict_items([(&#x27;reporter&#x27;, &lt;django.views.debug.ExceptionReporter object at 0x7ffffd205630&gt;), (&#x27;request&#x27;, &lt;WSGIRequest: GET &#x27;/test_view/&#x27;&gt;), (&#x27;tb&#x27;, &lt;traceback object at 0x7ffffd73d288&gt;), (&#x27;exc_value&#x27;, ValueError(&#x27;my new error&#x27;,)), (&#x27;exc_type&#x27;, &lt;class &#x27;ValueError&#x27;&gt;), (&#x27;self&#x27;, &lt;view_tests.tests.test_debug.ExceptionReporterTests testMethod=test_reporting_frames_with_suppressed_context&gt;)])}]</pre></td>\\n                  </tr>\\n                \\n                  <tr>\\n                    <td>reporter</td>\\n                    <td class=\"code\"><pre>&lt;django.views.debug.ExceptionReporter object at 0x7ffffd205630&gt;</pre></td>\\n                  </tr>\\n                \\n                  <tr>\\n                    <td>request</td>\\n                    <td class=\"code\"><pre>&lt;WSGIRequest: GET &#x27;/test_view/&#x27;&gt;</pre></td>\\n                  </tr>\\n                \\n                  <tr>\\n                    <td>self</td>\\n                    <td class=\"code\"><pre>&lt;view_tests.tests.test_debug.ExceptionReporterTests testMethod=test_reporting_frames_with_suppressed_context&gt;</pre></td>\\n                  </tr>\\n                \\n                  <tr>\\n                    <td>tb</td>\\n                    <td class=\"code\"><pre>&lt;traceback object at 0x7ffffd73d288&gt;</pre></td>\\n                  </tr>\\n                \\n              </tbody>\\n            </table>\\n          \\n        </li>\\n      \\n    </ul>\\n  </div>\\n  <form action=\"https://dpaste.com/\" name=\"pasteform\" id=\"pasteform\" method=\"post\">\\n\\n  <div id=\"pastebinTraceback\" class=\"pastebin\">\\n    <input type=\"hidden\" name=\"language\" value=\"PythonConsole\">\\n    <input type=\"hidden\" name=\"title\"\\n      value=\"ValueError at /test_view/\">\\n    <input type=\"hidden\" name=\"source\" value=\"Django Dpaste Agent\">\\n    <input type=\"hidden\" name=\"poster\" value=\"Django\">\\n    <textarea name=\"content\" id=\"traceback_area\" cols=\"140\" rows=\"25\">\\nEnvironment:\\n\\n\\nRequest Method: GET\\nRequest URL: http://testserver/test_view/\\n\\nDjango Version: 3.2\\nPython Version: 3.6.13\\nInstalled Applications:\\n[&#x27;django.contrib.contenttypes&#x27;,\\n &#x27;django.contrib.auth&#x27;,\\n &#x27;django.contrib.sites&#x27;,\\n &#x27;django.contrib.sessions&#x27;,\\n &#x27;django.contrib.messages&#x27;,\\n &#x27;django.contrib.admin.apps.SimpleAdminConfig&#x27;,\\n &#x27;django.contrib.staticfiles&#x27;,\\n &#x27;view_tests&#x27;]\\nInstalled Middleware:\\n[&#x27;django.contrib.sessions.middleware.SessionMiddleware&#x27;,\\n &#x27;django.middleware.common.CommonMiddleware&#x27;,\\n &#x27;django.middleware.csrf.CsrfViewMiddleware&#x27;,\\n &#x27;django.contrib.auth.middleware.AuthenticationMiddleware&#x27;,\\n &#x27;django.contrib.messages.middleware.MessageMiddleware&#x27;]\\n\\n\\n\\nTraceback (most recent call last):\\n  File \"/testbed/tests/view_tests/tests/test_debug.py\", line 475, in test_reporting_frames_with_suppressed_context\\n    raise ValueError(&#x27;my new error&#x27;) from None\\n\\nException Type: ValueError at /test_view/\\nException Value: my new error\\n</textarea>\\n  <br><br>\\n  <input type=\"submit\" value=\"Share this traceback on a public website\">\\n  </div>\\n</form>\\n</div>\\n\\n\\n\\n<div id=\"requestinfo\">\\n  <h2>Request information</h2>\\n\\n\\n  \\n    <h3 id=\"user-info\">USER</h3>\\n    <p>[unable to retrieve the current user]</p>\\n  \\n\\n  <h3 id=\"get-info\">GET</h3>\\n  \\n    <p>No GET data</p>\\n  \\n\\n  <h3 id=\"post-info\">POST</h3>\\n  \\n    <p>No POST data</p>\\n  \\n  <h3 id=\"files-info\">FILES</h3>\\n  \\n    <p>No FILES data</p>\\n  \\n\\n\\n  <h3 id=\"cookie-info\">COOKIES</h3>\\n  \\n    <p>No cookie data</p>\\n  \\n\\n  <h3 id=\"meta-info\">META</h3>\\n  <table class=\"req\">\\n    <thead>\\n      <tr>\\n        <th>Variable</th>\\n        <th>Value</th>\\n      </tr>\\n    </thead>\\n    <tbody>\\n      \\n        <tr>\\n          <td>HTTP_COOKIE</td>\\n          <td class=\"code\"><pre>&#x27;&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>PATH_INFO</td>\\n          <td class=\"code\"><pre>&#x27;/test_view/&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>QUERY_STRING</td>\\n          <td class=\"code\"><pre>&#x27;&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>REMOTE_ADDR</td>\\n          <td class=\"code\"><pre>&#x27;127.0.0.1&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>REQUEST_METHOD</td>\\n          <td class=\"code\"><pre>&#x27;GET&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SCRIPT_NAME</td>\\n          <td class=\"code\"><pre>&#x27;&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SERVER_NAME</td>\\n          <td class=\"code\"><pre>&#x27;testserver&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SERVER_PORT</td>\\n          <td class=\"code\"><pre>&#x27;80&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SERVER_PROTOCOL</td>\\n          <td class=\"code\"><pre>&#x27;HTTP/1.1&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>wsgi.errors</td>\\n          <td class=\"code\"><pre>&lt;_io.BytesIO object at 0x7ffffd717468&gt;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>wsgi.input</td>\\n          <td class=\"code\"><pre>&lt;django.test.client.FakePayload object at 0x7ffffd205518&gt;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>wsgi.multiprocess</td>\\n          <td class=\"code\"><pre>True</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>wsgi.multithread</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>wsgi.run_once</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>wsgi.url_scheme</td>\\n          <td class=\"code\"><pre>&#x27;http&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>wsgi.version</td>\\n          <td class=\"code\"><pre>(1, 0)</pre></td>\\n        </tr>\\n      \\n    </tbody>\\n  </table>\\n\\n\\n  <h3 id=\"settings-info\">Settings</h3>\\n  <h4>Using settings module <code>test_sqlite</code></h4>\\n  <table class=\"req\">\\n    <thead>\\n      <tr>\\n        <th>Setting</th>\\n        <th>Value</th>\\n      </tr>\\n    </thead>\\n    <tbody>\\n      \\n        <tr>\\n          <td>ABSOLUTE_URL_OVERRIDES</td>\\n          <td class=\"code\"><pre>{}</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>ADMINS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>ALLOWED_HOSTS</td>\\n          <td class=\"code\"><pre>[&#x27;testserver&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>APPEND_SLASH</td>\\n          <td class=\"code\"><pre>True</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>AUTHENTICATION_BACKENDS</td>\\n          <td class=\"code\"><pre>[&#x27;django.contrib.auth.backends.ModelBackend&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>AUTH_PASSWORD_VALIDATORS</td>\\n          <td class=\"code\"><pre>&#x27;********************&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>AUTH_USER_MODEL</td>\\n          <td class=\"code\"><pre>&#x27;auth.User&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CACHES</td>\\n          <td class=\"code\"><pre>{&#x27;default&#x27;: {&#x27;BACKEND&#x27;: &#x27;django.core.cache.backends.locmem.LocMemCache&#x27;}}</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CACHE_MIDDLEWARE_ALIAS</td>\\n          <td class=\"code\"><pre>&#x27;default&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CACHE_MIDDLEWARE_KEY_PREFIX</td>\\n          <td class=\"code\"><pre>&#x27;********************&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CACHE_MIDDLEWARE_SECONDS</td>\\n          <td class=\"code\"><pre>600</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_COOKIE_AGE</td>\\n          <td class=\"code\"><pre>31449600</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_COOKIE_DOMAIN</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_COOKIE_HTTPONLY</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_COOKIE_NAME</td>\\n          <td class=\"code\"><pre>&#x27;csrftoken&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_COOKIE_PATH</td>\\n          <td class=\"code\"><pre>&#x27;/&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_COOKIE_SAMESITE</td>\\n          <td class=\"code\"><pre>&#x27;Lax&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_COOKIE_SECURE</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_FAILURE_VIEW</td>\\n          <td class=\"code\"><pre>&#x27;django.views.csrf.csrf_failure&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_HEADER_NAME</td>\\n          <td class=\"code\"><pre>&#x27;HTTP_X_CSRFTOKEN&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_TRUSTED_ORIGINS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>CSRF_USE_SESSIONS</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DATABASES</td>\\n          <td class=\"code\"><pre>{&#x27;default&#x27;: {&#x27;ATOMIC_REQUESTS&#x27;: False,\\n             &#x27;AUTOCOMMIT&#x27;: True,\\n             &#x27;CONN_MAX_AGE&#x27;: 0,\\n             &#x27;ENGINE&#x27;: &#x27;django.db.backends.sqlite3&#x27;,\\n             &#x27;HOST&#x27;: &#x27;&#x27;,\\n             &#x27;NAME&#x27;: &#x27;&#x27;,\\n             &#x27;OPTIONS&#x27;: {},\\n             &#x27;PASSWORD&#x27;: &#x27;********************&#x27;,\\n             &#x27;PORT&#x27;: &#x27;&#x27;,\\n             &#x27;TEST&#x27;: {&#x27;CHARSET&#x27;: None,\\n                      &#x27;COLLATION&#x27;: None,\\n                      &#x27;MIGRATE&#x27;: True,\\n                      &#x27;MIRROR&#x27;: None,\\n                      &#x27;NAME&#x27;: None},\\n             &#x27;TIME_ZONE&#x27;: None,\\n             &#x27;USER&#x27;: &#x27;&#x27;},\\n &#x27;other&#x27;: {&#x27;ATOMIC_REQUESTS&#x27;: False,\\n           &#x27;AUTOCOMMIT&#x27;: True,\\n           &#x27;CONN_MAX_AGE&#x27;: 0,\\n           &#x27;ENGINE&#x27;: &#x27;django.db.backends.sqlite3&#x27;,\\n           &#x27;HOST&#x27;: &#x27;&#x27;,\\n           &#x27;NAME&#x27;: &#x27;&#x27;,\\n           &#x27;OPTIONS&#x27;: {},\\n           &#x27;PASSWORD&#x27;: &#x27;********************&#x27;,\\n           &#x27;PORT&#x27;: &#x27;&#x27;,\\n           &#x27;TEST&#x27;: {&#x27;CHARSET&#x27;: None,\\n                    &#x27;COLLATION&#x27;: None,\\n                    &#x27;MIGRATE&#x27;: True,\\n                    &#x27;MIRROR&#x27;: None,\\n                    &#x27;NAME&#x27;: None},\\n           &#x27;TIME_ZONE&#x27;: None,\\n           &#x27;USER&#x27;: &#x27;&#x27;}}</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DATABASE_ROUTERS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DATA_UPLOAD_MAX_MEMORY_SIZE</td>\\n          <td class=\"code\"><pre>2621440</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DATA_UPLOAD_MAX_NUMBER_FIELDS</td>\\n          <td class=\"code\"><pre>1000</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DATETIME_FORMAT</td>\\n          <td class=\"code\"><pre>&#x27;N j, Y, P&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DATETIME_INPUT_FORMATS</td>\\n          <td class=\"code\"><pre>[&#x27;%Y-%m-%d %H:%M:%S&#x27;,\\n &#x27;%Y-%m-%d %H:%M:%S.%f&#x27;,\\n &#x27;%Y-%m-%d %H:%M&#x27;,\\n &#x27;%m/%d/%Y %H:%M:%S&#x27;,\\n &#x27;%m/%d/%Y %H:%M:%S.%f&#x27;,\\n &#x27;%m/%d/%Y %H:%M&#x27;,\\n &#x27;%m/%d/%y %H:%M:%S&#x27;,\\n &#x27;%m/%d/%y %H:%M:%S.%f&#x27;,\\n &#x27;%m/%d/%y %H:%M&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DATE_FORMAT</td>\\n          <td class=\"code\"><pre>&#x27;N j, Y&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DATE_INPUT_FORMATS</td>\\n          <td class=\"code\"><pre>[&#x27;%Y-%m-%d&#x27;,\\n &#x27;%m/%d/%Y&#x27;,\\n &#x27;%m/%d/%y&#x27;,\\n &#x27;%b %d %Y&#x27;,\\n &#x27;%b %d, %Y&#x27;,\\n &#x27;%d %b %Y&#x27;,\\n &#x27;%d %b, %Y&#x27;,\\n &#x27;%B %d %Y&#x27;,\\n &#x27;%B %d, %Y&#x27;,\\n &#x27;%d %B %Y&#x27;,\\n &#x27;%d %B, %Y&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEBUG</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEBUG_PROPAGATE_EXCEPTIONS</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DECIMAL_SEPARATOR</td>\\n          <td class=\"code\"><pre>&#x27;.&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEFAULT_CHARSET</td>\\n          <td class=\"code\"><pre>&#x27;utf-8&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEFAULT_EXCEPTION_REPORTER</td>\\n          <td class=\"code\"><pre>&#x27;django.views.debug.ExceptionReporter&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEFAULT_EXCEPTION_REPORTER_FILTER</td>\\n          <td class=\"code\"><pre>&#x27;django.views.debug.SafeExceptionReporterFilter&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEFAULT_FILE_STORAGE</td>\\n          <td class=\"code\"><pre>&#x27;django.core.files.storage.FileSystemStorage&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEFAULT_FROM_EMAIL</td>\\n          <td class=\"code\"><pre>&#x27;webmaster@localhost&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEFAULT_HASHING_ALGORITHM</td>\\n          <td class=\"code\"><pre>&#x27;sha256&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEFAULT_INDEX_TABLESPACE</td>\\n          <td class=\"code\"><pre>&#x27;&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DEFAULT_TABLESPACE</td>\\n          <td class=\"code\"><pre>&#x27;&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>DISALLOWED_USER_AGENTS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_BACKEND</td>\\n          <td class=\"code\"><pre>&#x27;django.core.mail.backends.locmem.EmailBackend&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_HOST</td>\\n          <td class=\"code\"><pre>&#x27;localhost&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_HOST_PASSWORD</td>\\n          <td class=\"code\"><pre>&#x27;********************&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_HOST_USER</td>\\n          <td class=\"code\"><pre>&#x27;&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_PORT</td>\\n          <td class=\"code\"><pre>25</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_SSL_CERTFILE</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_SSL_KEYFILE</td>\\n          <td class=\"code\"><pre>&#x27;********************&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_SUBJECT_PREFIX</td>\\n          <td class=\"code\"><pre>&#x27;[Django] &#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_TIMEOUT</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_USE_LOCALTIME</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_USE_SSL</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>EMAIL_USE_TLS</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FILE_UPLOAD_DIRECTORY_PERMISSIONS</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FILE_UPLOAD_HANDLERS</td>\\n          <td class=\"code\"><pre>[&#x27;django.core.files.uploadhandler.MemoryFileUploadHandler&#x27;,\\n &#x27;django.core.files.uploadhandler.TemporaryFileUploadHandler&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FILE_UPLOAD_MAX_MEMORY_SIZE</td>\\n          <td class=\"code\"><pre>2621440</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FILE_UPLOAD_PERMISSIONS</td>\\n          <td class=\"code\"><pre>420</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FILE_UPLOAD_TEMP_DIR</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FIRST_DAY_OF_WEEK</td>\\n          <td class=\"code\"><pre>0</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FIXTURE_DIRS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FORCE_SCRIPT_NAME</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FORMAT_MODULE_PATH</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>FORM_RENDERER</td>\\n          <td class=\"code\"><pre>&#x27;django.forms.renderers.DjangoTemplates&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>IGNORABLE_404_URLS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>INSTALLED_APPS</td>\\n          <td class=\"code\"><pre>[&#x27;django.contrib.contenttypes&#x27;,\\n &#x27;django.contrib.auth&#x27;,\\n &#x27;django.contrib.sites&#x27;,\\n &#x27;django.contrib.sessions&#x27;,\\n &#x27;django.contrib.messages&#x27;,\\n &#x27;django.contrib.admin.apps.SimpleAdminConfig&#x27;,\\n &#x27;django.contrib.staticfiles&#x27;,\\n &#x27;view_tests&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>INTERNAL_IPS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGES</td>\\n          <td class=\"code\"><pre>[(&#x27;af&#x27;, &#x27;Afrikaans&#x27;),\\n (&#x27;ar&#x27;, &#x27;Arabic&#x27;),\\n (&#x27;ar-dz&#x27;, &#x27;Algerian Arabic&#x27;),\\n (&#x27;ast&#x27;, &#x27;Asturian&#x27;),\\n (&#x27;az&#x27;, &#x27;Azerbaijani&#x27;),\\n (&#x27;bg&#x27;, &#x27;Bulgarian&#x27;),\\n (&#x27;be&#x27;, &#x27;Belarusian&#x27;),\\n (&#x27;bn&#x27;, &#x27;Bengali&#x27;),\\n (&#x27;br&#x27;, &#x27;Breton&#x27;),\\n (&#x27;bs&#x27;, &#x27;Bosnian&#x27;),\\n (&#x27;ca&#x27;, &#x27;Catalan&#x27;),\\n (&#x27;cs&#x27;, &#x27;Czech&#x27;),\\n (&#x27;cy&#x27;, &#x27;Welsh&#x27;),\\n (&#x27;da&#x27;, &#x27;Danish&#x27;),\\n (&#x27;de&#x27;, &#x27;German&#x27;),\\n (&#x27;dsb&#x27;, &#x27;Lower Sorbian&#x27;),\\n (&#x27;el&#x27;, &#x27;Greek&#x27;),\\n (&#x27;en&#x27;, &#x27;English&#x27;),\\n (&#x27;en-au&#x27;, &#x27;Australian English&#x27;),\\n (&#x27;en-gb&#x27;, &#x27;British English&#x27;),\\n (&#x27;eo&#x27;, &#x27;Esperanto&#x27;),\\n (&#x27;es&#x27;, &#x27;Spanish&#x27;),\\n (&#x27;es-ar&#x27;, &#x27;Argentinian Spanish&#x27;),\\n (&#x27;es-co&#x27;, &#x27;Colombian Spanish&#x27;),\\n (&#x27;es-mx&#x27;, &#x27;Mexican Spanish&#x27;),\\n (&#x27;es-ni&#x27;, &#x27;Nicaraguan Spanish&#x27;),\\n (&#x27;es-ve&#x27;, &#x27;Venezuelan Spanish&#x27;),\\n (&#x27;et&#x27;, &#x27;Estonian&#x27;),\\n (&#x27;eu&#x27;, &#x27;Basque&#x27;),\\n (&#x27;fa&#x27;, &#x27;Persian&#x27;),\\n (&#x27;fi&#x27;, &#x27;Finnish&#x27;),\\n (&#x27;fr&#x27;, &#x27;French&#x27;),\\n (&#x27;fy&#x27;, &#x27;Frisian&#x27;),\\n (&#x27;ga&#x27;, &#x27;Irish&#x27;),\\n (&#x27;gd&#x27;, &#x27;Scottish Gaelic&#x27;),\\n (&#x27;gl&#x27;, &#x27;Galician&#x27;),\\n (&#x27;he&#x27;, &#x27;Hebrew&#x27;),\\n (&#x27;hi&#x27;, &#x27;Hindi&#x27;),\\n (&#x27;hr&#x27;, &#x27;Croatian&#x27;),\\n (&#x27;hsb&#x27;, &#x27;Upper Sorbian&#x27;),\\n (&#x27;hu&#x27;, &#x27;Hungarian&#x27;),\\n (&#x27;hy&#x27;, &#x27;Armenian&#x27;),\\n (&#x27;ia&#x27;, &#x27;Interlingua&#x27;),\\n (&#x27;id&#x27;, &#x27;Indonesian&#x27;),\\n (&#x27;ig&#x27;, &#x27;Igbo&#x27;),\\n (&#x27;io&#x27;, &#x27;Ido&#x27;),\\n (&#x27;is&#x27;, &#x27;Icelandic&#x27;),\\n (&#x27;it&#x27;, &#x27;Italian&#x27;),\\n (&#x27;ja&#x27;, &#x27;Japanese&#x27;),\\n (&#x27;ka&#x27;, &#x27;Georgian&#x27;),\\n (&#x27;kab&#x27;, &#x27;Kabyle&#x27;),\\n (&#x27;kk&#x27;, &#x27;Kazakh&#x27;),\\n (&#x27;km&#x27;, &#x27;Khmer&#x27;),\\n (&#x27;kn&#x27;, &#x27;Kannada&#x27;),\\n (&#x27;ko&#x27;, &#x27;Korean&#x27;),\\n (&#x27;ky&#x27;, &#x27;Kyrgyz&#x27;),\\n (&#x27;lb&#x27;, &#x27;Luxembourgish&#x27;),\\n (&#x27;lt&#x27;, &#x27;Lithuanian&#x27;),\\n (&#x27;lv&#x27;, &#x27;Latvian&#x27;),\\n (&#x27;mk&#x27;, &#x27;Macedonian&#x27;),\\n (&#x27;ml&#x27;, &#x27;Malayalam&#x27;),\\n (&#x27;mn&#x27;, &#x27;Mongolian&#x27;),\\n (&#x27;mr&#x27;, &#x27;Marathi&#x27;),\\n (&#x27;my&#x27;, &#x27;Burmese&#x27;),\\n (&#x27;nb&#x27;, &#x27;Norwegian Bokm\\xe5l&#x27;),\\n (&#x27;ne&#x27;, &#x27;Nepali&#x27;),\\n (&#x27;nl&#x27;, &#x27;Dutch&#x27;),\\n (&#x27;nn&#x27;, &#x27;Norwegian Nynorsk&#x27;),\\n (&#x27;os&#x27;, &#x27;Ossetic&#x27;),\\n (&#x27;pa&#x27;, &#x27;Punjabi&#x27;),\\n (&#x27;pl&#x27;, &#x27;Polish&#x27;),\\n (&#x27;pt&#x27;, &#x27;Portuguese&#x27;),\\n (&#x27;pt-br&#x27;, &#x27;Brazilian Portuguese&#x27;),\\n (&#x27;ro&#x27;, &#x27;Romanian&#x27;),\\n (&#x27;ru&#x27;, &#x27;Russian&#x27;),\\n (&#x27;sk&#x27;, &#x27;Slovak&#x27;),\\n (&#x27;sl&#x27;, &#x27;Slovenian&#x27;),\\n (&#x27;sq&#x27;, &#x27;Albanian&#x27;),\\n (&#x27;sr&#x27;, &#x27;Serbian&#x27;),\\n (&#x27;sr-latn&#x27;, &#x27;Serbian Latin&#x27;),\\n (&#x27;sv&#x27;, &#x27;Swedish&#x27;),\\n (&#x27;sw&#x27;, &#x27;Swahili&#x27;),\\n (&#x27;ta&#x27;, &#x27;Tamil&#x27;),\\n (&#x27;te&#x27;, &#x27;Telugu&#x27;),\\n (&#x27;tg&#x27;, &#x27;Tajik&#x27;),\\n (&#x27;th&#x27;, &#x27;Thai&#x27;),\\n (&#x27;tk&#x27;, &#x27;Turkmen&#x27;),\\n (&#x27;tr&#x27;, &#x27;Turkish&#x27;),\\n (&#x27;tt&#x27;, &#x27;Tatar&#x27;),\\n (&#x27;udm&#x27;, &#x27;Udmurt&#x27;),\\n (&#x27;uk&#x27;, &#x27;Ukrainian&#x27;),\\n (&#x27;ur&#x27;, &#x27;Urdu&#x27;),\\n (&#x27;uz&#x27;, &#x27;Uzbek&#x27;),\\n (&#x27;vi&#x27;, &#x27;Vietnamese&#x27;),\\n (&#x27;zh-hans&#x27;, &#x27;Simplified Chinese&#x27;),\\n (&#x27;zh-hant&#x27;, &#x27;Traditional Chinese&#x27;)]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGES_BIDI</td>\\n          <td class=\"code\"><pre>[&#x27;he&#x27;, &#x27;ar&#x27;, &#x27;ar-dz&#x27;, &#x27;fa&#x27;, &#x27;ur&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGE_CODE</td>\\n          <td class=\"code\"><pre>&#x27;en&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGE_COOKIE_AGE</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGE_COOKIE_DOMAIN</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGE_COOKIE_HTTPONLY</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGE_COOKIE_NAME</td>\\n          <td class=\"code\"><pre>&#x27;django_language&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGE_COOKIE_PATH</td>\\n          <td class=\"code\"><pre>&#x27;/&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGE_COOKIE_SAMESITE</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LANGUAGE_COOKIE_SECURE</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LOCALE_PATHS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LOGGING</td>\\n          <td class=\"code\"><pre>{&#x27;disable_existing_loggers&#x27;: False,\\n &#x27;filters&#x27;: {&#x27;require_debug_false&#x27;: {&#x27;()&#x27;: &#x27;django.utils.log.RequireDebugFalse&#x27;},\\n             &#x27;require_debug_true&#x27;: {&#x27;()&#x27;: &#x27;django.utils.log.RequireDebugTrue&#x27;}},\\n &#x27;formatters&#x27;: {&#x27;django.server&#x27;: {&#x27;()&#x27;: &#x27;django.utils.log.ServerFormatter&#x27;,\\n                                  &#x27;format&#x27;: &#x27;[{server_time}] {message}&#x27;,\\n                                  &#x27;style&#x27;: &#x27;{&#x27;}},\\n &#x27;handlers&#x27;: {&#x27;console&#x27;: {&#x27;class&#x27;: &#x27;logging.StreamHandler&#x27;,\\n                          &#x27;filters&#x27;: [&#x27;require_debug_true&#x27;],\\n                          &#x27;level&#x27;: &#x27;INFO&#x27;},\\n              &#x27;django.server&#x27;: {&#x27;class&#x27;: &#x27;logging.StreamHandler&#x27;,\\n                                &#x27;formatter&#x27;: &#x27;django.server&#x27;,\\n                                &#x27;level&#x27;: &#x27;INFO&#x27;},\\n              &#x27;mail_admins&#x27;: {&#x27;class&#x27;: &#x27;django.utils.log.AdminEmailHandler&#x27;,\\n                              &#x27;filters&#x27;: [&#x27;require_debug_false&#x27;],\\n                              &#x27;level&#x27;: &#x27;ERROR&#x27;}},\\n &#x27;loggers&#x27;: {&#x27;django&#x27;: {&#x27;handlers&#x27;: [&#x27;console&#x27;, &#x27;mail_admins&#x27;],\\n                        &#x27;level&#x27;: &#x27;ERROR&#x27;},\\n             &#x27;django.server&#x27;: {&#x27;handlers&#x27;: [&#x27;django.server&#x27;],\\n                               &#x27;level&#x27;: &#x27;INFO&#x27;,\\n                               &#x27;propagate&#x27;: False}},\\n &#x27;version&#x27;: 1}</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LOGGING_CONFIG</td>\\n          <td class=\"code\"><pre>&#x27;logging.config.dictConfig&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LOGIN_REDIRECT_URL</td>\\n          <td class=\"code\"><pre>&#x27;/accounts/profile/&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LOGIN_URL</td>\\n          <td class=\"code\"><pre>&#x27;/accounts/login/&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>LOGOUT_REDIRECT_URL</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>MANAGERS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>MEDIA_ROOT</td>\\n          <td class=\"code\"><pre>&#x27;&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>MEDIA_URL</td>\\n          <td class=\"code\"><pre>&#x27;/&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>MESSAGE_STORAGE</td>\\n          <td class=\"code\"><pre>&#x27;django.contrib.messages.storage.fallback.FallbackStorage&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>MIDDLEWARE</td>\\n          <td class=\"code\"><pre>[&#x27;django.contrib.sessions.middleware.SessionMiddleware&#x27;,\\n &#x27;django.middleware.common.CommonMiddleware&#x27;,\\n &#x27;django.middleware.csrf.CsrfViewMiddleware&#x27;,\\n &#x27;django.contrib.auth.middleware.AuthenticationMiddleware&#x27;,\\n &#x27;django.contrib.messages.middleware.MessageMiddleware&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>MIGRATION_MODULES</td>\\n          <td class=\"code\"><pre>{&#x27;auth&#x27;: None, &#x27;contenttypes&#x27;: None, &#x27;sessions&#x27;: None}</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>MONTH_DAY_FORMAT</td>\\n          <td class=\"code\"><pre>&#x27;F j&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>NUMBER_GROUPING</td>\\n          <td class=\"code\"><pre>0</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>PASSWORD_HASHERS</td>\\n          <td class=\"code\"><pre>&#x27;********************&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>PASSWORD_RESET_TIMEOUT</td>\\n          <td class=\"code\"><pre>&#x27;********************&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>PASSWORD_RESET_TIMEOUT_DAYS</td>\\n          <td class=\"code\"><pre>&#x27;********************&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>PREPEND_WWW</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>ROOT_URLCONF</td>\\n          <td class=\"code\"><pre>&#x27;urls&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECRET_KEY</td>\\n          <td class=\"code\"><pre>&#x27;********************&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_BROWSER_XSS_FILTER</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_CONTENT_TYPE_NOSNIFF</td>\\n          <td class=\"code\"><pre>True</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_HSTS_INCLUDE_SUBDOMAINS</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_HSTS_PRELOAD</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_HSTS_SECONDS</td>\\n          <td class=\"code\"><pre>0</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_PROXY_SSL_HEADER</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_REDIRECT_EXEMPT</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_REFERRER_POLICY</td>\\n          <td class=\"code\"><pre>&#x27;same-origin&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_SSL_HOST</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SECURE_SSL_REDIRECT</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SERVER_EMAIL</td>\\n          <td class=\"code\"><pre>&#x27;root@localhost&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_CACHE_ALIAS</td>\\n          <td class=\"code\"><pre>&#x27;default&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_COOKIE_AGE</td>\\n          <td class=\"code\"><pre>1209600</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_COOKIE_DOMAIN</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_COOKIE_HTTPONLY</td>\\n          <td class=\"code\"><pre>True</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_COOKIE_NAME</td>\\n          <td class=\"code\"><pre>&#x27;sessionid&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_COOKIE_PATH</td>\\n          <td class=\"code\"><pre>&#x27;/&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_COOKIE_SAMESITE</td>\\n          <td class=\"code\"><pre>&#x27;Lax&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_COOKIE_SECURE</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_ENGINE</td>\\n          <td class=\"code\"><pre>&#x27;django.contrib.sessions.backends.db&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_EXPIRE_AT_BROWSER_CLOSE</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_FILE_PATH</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_SAVE_EVERY_REQUEST</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SESSION_SERIALIZER</td>\\n          <td class=\"code\"><pre>&#x27;django.contrib.sessions.serializers.JSONSerializer&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SETTINGS_MODULE</td>\\n          <td class=\"code\"><pre>&#x27;test_sqlite&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SHORT_DATETIME_FORMAT</td>\\n          <td class=\"code\"><pre>&#x27;m/d/Y P&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SHORT_DATE_FORMAT</td>\\n          <td class=\"code\"><pre>&#x27;m/d/Y&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SIGNING_BACKEND</td>\\n          <td class=\"code\"><pre>&#x27;django.core.signing.TimestampSigner&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SILENCED_SYSTEM_CHECKS</td>\\n          <td class=\"code\"><pre>[&#x27;fields.W342&#x27;, &#x27;fields.W903&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>SITE_ID</td>\\n          <td class=\"code\"><pre>1</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>STATICFILES_DIRS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>STATICFILES_FINDERS</td>\\n          <td class=\"code\"><pre>[&#x27;django.contrib.staticfiles.finders.FileSystemFinder&#x27;,\\n &#x27;django.contrib.staticfiles.finders.AppDirectoriesFinder&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>STATICFILES_STORAGE</td>\\n          <td class=\"code\"><pre>&#x27;django.contrib.staticfiles.storage.StaticFilesStorage&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>STATIC_ROOT</td>\\n          <td class=\"code\"><pre>&#x27;/tmp/django_wyjwuadv/static&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>STATIC_URL</td>\\n          <td class=\"code\"><pre>&#x27;/static/&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>TEMPLATES</td>\\n          <td class=\"code\"><pre>[{&#x27;APP_DIRS&#x27;: True,\\n  &#x27;BACKEND&#x27;: &#x27;django.template.backends.django.DjangoTemplates&#x27;,\\n  &#x27;DIRS&#x27;: [&#x27;/testbed/tests/templates&#x27;],\\n  &#x27;OPTIONS&#x27;: {&#x27;context_processors&#x27;: [&#x27;django.template.context_processors.debug&#x27;,\\n                                     &#x27;django.template.context_processors.request&#x27;,\\n                                     &#x27;django.contrib.auth.context_processors.auth&#x27;,\\n                                     &#x27;django.contrib.messages.context_processors.messages&#x27;]}}]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>TEST_NON_SERIALIZED_APPS</td>\\n          <td class=\"code\"><pre>[]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>TEST_RUNNER</td>\\n          <td class=\"code\"><pre>&#x27;django.test.runner.DiscoverRunner&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>THOUSAND_SEPARATOR</td>\\n          <td class=\"code\"><pre>&#x27;,&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>TIME_FORMAT</td>\\n          <td class=\"code\"><pre>&#x27;P&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>TIME_INPUT_FORMATS</td>\\n          <td class=\"code\"><pre>[&#x27;%H:%M:%S&#x27;, &#x27;%H:%M:%S.%f&#x27;, &#x27;%H:%M&#x27;]</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>TIME_ZONE</td>\\n          <td class=\"code\"><pre>&#x27;America/Chicago&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>USE_I18N</td>\\n          <td class=\"code\"><pre>True</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>USE_L10N</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>USE_THOUSAND_SEPARATOR</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>USE_TZ</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>USE_X_FORWARDED_HOST</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>USE_X_FORWARDED_PORT</td>\\n          <td class=\"code\"><pre>False</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>WSGI_APPLICATION</td>\\n          <td class=\"code\"><pre>None</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>X_FRAME_OPTIONS</td>\\n          <td class=\"code\"><pre>&#x27;DENY&#x27;</pre></td>\\n        </tr>\\n      \\n        <tr>\\n          <td>YEAR_MONTH_FORMAT</td>\\n          <td class=\"code\"><pre>&#x27;F Y&#x27;</pre></td>\\n        </tr>\\n      \\n    </tbody>\\n  </table>\\n\\n</div>\\n\\n  <div id=\"explanation\">\\n    <p>\\n      You\\u2019re seeing this error because you have <code>DEBUG = True</code> in your\\n      Django settings file. Change that to <code>False</code>, and Django will\\n      display a standard page generated by the handler for this status code.\\n    </p>\\n  </div>\\n\\n</body>\\n</html>\\n'\n\n======================================================================\nFAIL: test_reporting_frames_with_explicit_cause_and_suppressed_context (view_tests.tests.test_debug.ExceptionReporterTests)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/testbed/tests/view_tests/tests/test_debug.py\", line 503, in test_reporting_frames_with_explicit_cause_and_suppressed_context\n    self.assertEqual(len(frames), 2)\nAssertionError: 0 != 2\n\n======================================================================\nFAIL: test_reporting_frames_with_implicit_context (view_tests.tests.test_debug.ExceptionReporterTests)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/testbed/tests/view_tests/tests/test_debug.py\", line 523, in test_reporting_frames_with_implicit_context\n    self.assertEqual(frames[0]['exc_cause'], exc_value.__context__)\nAssertionError: None != RuntimeError('my error',)\n\n----------------------------------------------------------------------\nRan 3 tests in 0.030s\n\nFAILED (failures=3)\n",
+        "returncode": 0,
+        "timestamp": 1794815180.576501,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_AJqIyOvhzfcWaMHNssRX6368",
+      "role": "tool"
+    },
+    {
+      "content": "Interesting. The source has the fix, yet tests fail. Let me investigate why. The first test's `frames` shows `exc_cause: None` correctly, but the HTML still contains \"During handling of the above exception\". Let me look at the template and the actual behavior more carefully.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; grep -n \\\"During handling\\\\|direct cause\\\\|exc_cause\\\" django/views/templates/technical_500.html django/views/debug.py\"}",
+            "name": "bash"
+          },
+          "id": "call_00_2Va3eTzx2n8WEQ48VsG10080",
+          "type": "function"
+        },
+        {
+          "index": 1,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; sed -n 470,530p tests/view_tests/tests/test_debug.py\"}",
+            "name": "bash"
+          },
+          "id": "call_01_aJGA09yDzsjvBHicIsuL7849",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed; grep -n \"During handling\\|direct cause\\|exc_cause\" django/views/templates/technical_500.html django/views/debug.py",
+            "tool_call_id": "call_00_2Va3eTzx2n8WEQ48VsG10080"
+          },
+          {
+            "command": "cd /testbed; sed -n 470,530p tests/view_tests/tests/test_debug.py",
+            "tool_call_id": "call_01_aJGA09yDzsjvBHicIsuL7849"
+          }
+        ],
+        "response": {
+          "id": "472fc9ad-298e-4930-a3e3-0140f0c03c72",
+          "created": 1794815180,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "Interesting. The source has the fix, yet tests fail. Let me investigate why. The first test's `frames` shows `exc_cause: None` correctly, but the HTML still contains \"During handling of the above exception\". Let me look at the template and the actual behavior more carefully.",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; grep -n \\\"During handling\\\\|direct cause\\\\|exc_cause\\\" django/views/templates/technical_500.html django/views/debug.py\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_2Va3eTzx2n8WEQ48VsG10080",
+                    "type": "function"
+                  },
+                  {
+                    "index": 1,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; sed -n 470,530p tests/view_tests/tests/test_debug.py\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_01_aJGA09yDzsjvBHicIsuL7849",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 178,
+            "prompt_tokens": 22765,
+            "total_tokens": 22943,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 4608
+            },
+            "prompt_cache_hit_tokens": 4608,
+            "prompt_cache_miss_tokens": 18157
+          }
+        },
+        "cost": 0.0070431,
+        "timestamp": 1794815182.766523
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\ndjango/views/templates/technical_500.html:218:        {% ifchanged frame.exc_cause %}{% if frame.exc_cause %}\ndjango/views/templates/technical_500.html:220:          {% if frame.exc_cause_explicit %}\ndjango/views/templates/technical_500.html:221:            The above exception ({{ frame.exc_cause|force_escape }}) was the direct cause of the following exception:\ndjango/views/templates/technical_500.html:223:            During handling of the above exception ({{ frame.exc_cause|force_escape }}), another exception occurred:\ndjango/views/templates/technical_500.html:318:{% ifchanged frame.exc_cause %}{% if frame.exc_cause %}{% if frame.exc_cause_explicit %}\ndjango/views/templates/technical_500.html:319:The above exception ({{ frame.exc_cause|force_escape }}) was the direct cause of the following exception:\ndjango/views/templates/technical_500.html:321:During handling of the above exception ({{ frame.exc_cause|force_escape }}), another exception occurred:\ndjango/views/debug.py:448:                'exc_cause': explicit_or_implicit_cause(exc_value),\ndjango/views/debug.py:449:                'exc_cause_explicit': getattr(exc_value, '__cause__', True),\n</output>",
+      "extra": {
+        "raw_output": "django/views/templates/technical_500.html:218:        {% ifchanged frame.exc_cause %}{% if frame.exc_cause %}\ndjango/views/templates/technical_500.html:220:          {% if frame.exc_cause_explicit %}\ndjango/views/templates/technical_500.html:221:            The above exception ({{ frame.exc_cause|force_escape }}) was the direct cause of the following exception:\ndjango/views/templates/technical_500.html:223:            During handling of the above exception ({{ frame.exc_cause|force_escape }}), another exception occurred:\ndjango/views/templates/technical_500.html:318:{% ifchanged frame.exc_cause %}{% if frame.exc_cause %}{% if frame.exc_cause_explicit %}\ndjango/views/templates/technical_500.html:319:The above exception ({{ frame.exc_cause|force_escape }}) was the direct cause of the following exception:\ndjango/views/templates/technical_500.html:321:During handling of the above exception ({{ frame.exc_cause|force_escape }}), another exception occurred:\ndjango/views/debug.py:448:                'exc_cause': explicit_or_implicit_cause(exc_value),\ndjango/views/debug.py:449:                'exc_cause_explicit': getattr(exc_value, '__cause__', True),\n",
+        "returncode": 0,
+        "timestamp": 1794815183.079535,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_2Va3eTzx2n8WEQ48VsG10080",
+      "role": "tool"
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n    def test_reporting_frames_with_suppressed_context(self):\n        try:\n            try:\n                raise RuntimeError('my error')\n            except Exception:\n                raise ValueError('my new error') from None\n        except ValueError:\n            exc_type, exc_value, tb = sys.exc_info()\n        request = self.rf.get('/test_view/')\n        reporter = ExceptionReporter(request, exc_type, exc_value, tb)\n        frames = reporter.get_traceback_frames()\n        # Only the ValueError is reported, the suppressed RuntimeError isn't.\n        self.assertEqual(len(frames), 1)\n        self.assertIsNone(frames[0]['exc_cause'])\n        html = reporter.get_traceback_html()\n        self.assertNotIn('During handling of the above exception', html)\n        self.assertNotIn('was the direct cause of the following exception', html)\n        text = reporter.get_traceback_text()\n        self.assertNotIn('During handling of the above exception', text)\n        self.assertNotIn('was the direct cause of the following exception', text)\n\n    def test_reporting_frames_with_explicit_cause_and_suppressed_context(self):\n        try:\n            try:\n                raise RuntimeError('my error')\n            except Exception:\n                raise ValueError('my new error') from KeyError('explicit cause')\n        except ValueError:\n            exc_type, exc_value, tb = sys.exc_info()\n        request = self.rf.get('/test_view/')\n        reporter = ExceptionReporter(request, exc_type, exc_value, tb)\n        frames = reporter.get_traceback_frames()\n        # The explicit cause is reported, the suppressed context isn't.\n        self.assertEqual(len(frames), 2)\n        self.assertEqual(frames[0]['exc_cause'], KeyError('explicit cause'))\n        self.assertIs(frames[0]['exc_cause_explicit'], exc_value.__cause__)\n        html = reporter.get_traceback_html()\n        self.assertNotIn('During handling of the above exception', html)\n        self.assertIn('The above exception (explicit cause) was the direct cause', html)\n\n    def test_reporting_frames_with_implicit_context(self):\n        try:\n            try:\n                raise RuntimeError('my error')\n            except Exception:\n                raise ValueError('my new error')\n        except ValueError:\n            exc_type, exc_value, tb = sys.exc_info()\n        request = self.rf.get('/test_view/')\n        reporter = ExceptionReporter(request, exc_type, exc_value, tb)\n        frames = reporter.get_traceback_frames()\n        # Without suppression, the implicit context is still reported.\n        self.assertEqual(len(frames), 2)\n        self.assertEqual(frames[0]['exc_cause'], exc_value.__context__)\n        self.assertIsInstance(frames[0]['exc_cause'], RuntimeError)\n        html = reporter.get_traceback_html()\n        self.assertIn('During handling of the above exception (my error)', html)\n\n    def test_reporting_of_nested_exceptions(self):\n        request = self.rf.get('/test_view/')\n        try:\n</output>",
+      "extra": {
+        "raw_output": "    def test_reporting_frames_with_suppressed_context(self):\n        try:\n            try:\n                raise RuntimeError('my error')\n            except Exception:\n                raise ValueError('my new error') from None\n        except ValueError:\n            exc_type, exc_value, tb = sys.exc_info()\n        request = self.rf.get('/test_view/')\n        reporter = ExceptionReporter(request, exc_type, exc_value, tb)\n        frames = reporter.get_traceback_frames()\n        # Only the ValueError is reported, the suppressed RuntimeError isn't.\n        self.assertEqual(len(frames), 1)\n        self.assertIsNone(frames[0]['exc_cause'])\n        html = reporter.get_traceback_html()\n        self.assertNotIn('During handling of the above exception', html)\n        self.assertNotIn('was the direct cause of the following exception', html)\n        text = reporter.get_traceback_text()\n        self.assertNotIn('During handling of the above exception', text)\n        self.assertNotIn('was the direct cause of the following exception', text)\n\n    def test_reporting_frames_with_explicit_cause_and_suppressed_context(self):\n        try:\n            try:\n                raise RuntimeError('my error')\n            except Exception:\n                raise ValueError('my new error') from KeyError('explicit cause')\n        except ValueError:\n            exc_type, exc_value, tb = sys.exc_info()\n        request = self.rf.get('/test_view/')\n        reporter = ExceptionReporter(request, exc_type, exc_value, tb)\n        frames = reporter.get_traceback_frames()\n        # The explicit cause is reported, the suppressed context isn't.\n        self.assertEqual(len(frames), 2)\n        self.assertEqual(frames[0]['exc_cause'], KeyError('explicit cause'))\n        self.assertIs(frames[0]['exc_cause_explicit'], exc_value.__cause__)\n        html = reporter.get_traceback_html()\n        self.assertNotIn('During handling of the above exception', html)\n        self.assertIn('The above exception (explicit cause) was the direct cause', html)\n\n    def test_reporting_frames_with_implicit_context(self):\n        try:\n            try:\n                raise RuntimeError('my error')\n            except Exception:\n                raise ValueError('my new error')\n        except ValueError:\n            exc_type, exc_value, tb = sys.exc_info()\n        request = self.rf.get('/test_view/')\n        reporter = ExceptionReporter(request, exc_type, exc_value, tb)\n        frames = reporter.get_traceback_frames()\n        # Without suppression, the implicit context is still reported.\n        self.assertEqual(len(frames), 2)\n        self.assertEqual(frames[0]['exc_cause'], exc_value.__context__)\n        self.assertIsInstance(frames[0]['exc_cause'], RuntimeError)\n        html = reporter.get_traceback_html()\n        self.assertIn('During handling of the above exception (my error)', html)\n\n    def test_reporting_of_nested_exceptions(self):\n        request = self.rf.get('/test_view/')\n        try:\n",
+        "returncode": 0,
+        "timestamp": 1794815183.081236,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_01_aJGA09yDzsjvBHicIsuL7849",
+      "role": "tool"
+    },
+    {
+      "content": "The source has the fix, but tests fail. This is confusing. Let me check whether the installed Django is being imported from a different location, or whether there's a stale .pyc / different debug.py.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed/tests; python -c \\\"import django.views.debug as d; print(d.__file__); import inspect; print(inspect.getsource(d.ExceptionReporter.get_traceback_frames).splitlines()[1:6])\\\"\"}",
+            "name": "bash"
+          },
+          "id": "call_00_E2iCyb4EBy5fKvRXGJfT6855",
+          "type": "function"
+        },
+        {
+          "index": 1,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; find / -name \\\"debug.py\\\" -path \\\"*views*\\\" 2>/dev/null; pip show django 2>/dev/null | grep -i location\"}",
+            "name": "bash"
+          },
+          "id": "call_01_DaVnISFLLZ50Tgox5U4n9802",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed/tests; python -c \"import django.views.debug as d; print(d.__file__); import inspect; print(inspect.getsource(d.ExceptionReporter.get_traceback_frames).splitlines()[1:6])\"",
+            "tool_call_id": "call_00_E2iCyb4EBy5fKvRXGJfT6855"
+          },
+          {
+            "command": "cd /testbed; find / -name \"debug.py\" -path \"*views*\" 2>/dev/null; pip show django 2>/dev/null | grep -i location",
+            "tool_call_id": "call_01_DaVnISFLLZ50Tgox5U4n9802"
+          }
+        ],
+        "response": {
+          "id": "4ac9125b-52d2-4762-a7ec-f858cbc5775d",
+          "created": 1794815183,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "The source has the fix, but tests fail. This is confusing. Let me check whether the installed Django is being imported from a different location, or whether there's a stale .pyc / different debug.py.",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed/tests; python -c \\\"import django.views.debug as d; print(d.__file__); import inspect; print(inspect.getsource(d.ExceptionReporter.get_traceback_frames).splitlines()[1:6])\\\"\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_E2iCyb4EBy5fKvRXGJfT6855",
+                    "type": "function"
+                  },
+                  {
+                    "index": 1,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; find / -name \\\"debug.py\\\" -path \\\"*views*\\\" 2>/dev/null; pip show django 2>/dev/null | grep -i location\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_01_DaVnISFLLZ50Tgox5U4n9802",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 194,
+            "prompt_tokens": 23950,
+            "total_tokens": 24144,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 22912
+            },
+            "prompt_cache_hit_tokens": 22912,
+            "prompt_cache_miss_tokens": 1038
+          }
+        },
+        "cost": 0.0074178000000000004,
+        "timestamp": 1794815184.85886
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n/testbed/django/views/debug.py\n['        def explicit_or_implicit_cause(exc_value):', \"            explicit = getattr(exc_value, '__cause__', None)\", \"            suppress_context = getattr(exc_value, '__suppress_context__', None)\", \"            implicit = getattr(exc_value, '__context__', None)\", '            return explicit or (None if suppress_context else implicit)']\n</output>",
+      "extra": {
+        "raw_output": "/testbed/django/views/debug.py\n['        def explicit_or_implicit_cause(exc_value):', \"            explicit = getattr(exc_value, '__cause__', None)\", \"            suppress_context = getattr(exc_value, '__suppress_context__', None)\", \"            implicit = getattr(exc_value, '__context__', None)\", '            return explicit or (None if suppress_context else implicit)']\n",
+        "returncode": 0,
+        "timestamp": 1794815186.661597,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_E2iCyb4EBy5fKvRXGJfT6855",
+      "role": "tool"
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n/testbed/django/views/decorators/debug.py\n/testbed/django/views/debug.py\nLocation: /testbed\n</output>",
+      "extra": {
+        "raw_output": "/testbed/django/views/decorators/debug.py\n/testbed/django/views/debug.py\nLocation: /testbed\n",
+        "returncode": 0,
+        "timestamp": 1794815186.662472,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_01_DaVnISFLLZ50Tgox5U4n9802",
+      "role": "tool"
+    },
+    {
+      "content": "The source has the fix. Yet the tests fail. Let me debug directly why `get_traceback_frames` returns 0 frames in the explicit-cause test and why HTML still shows the message in the first test.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed/tests; python -c \\\"\\nimport sys, django\\nfrom django.conf import settings\\nimport os\\nos.environ.setdefault('DJANGO_SETTINGS_MODULE','test_sqlite')\\ndjango.setup()\\nfrom django.views.debug import ExceptionReporter\\nfrom django.test import RequestFactory\\nrf=RequestFactory()\\ntry:\\n    try:\\n        raise RuntimeError('my error')\\n    except Exception:\\n        raise ValueError('my new error') from None\\nexcept ValueError:\\n    et,ev,tb=sys.exc_info()\\nprint('suppress', ev.__suppress_context__, 'cause', ev.__cause__, 'context', ev.__context__)\\nr=ExceptionReporter(rf.get('/'),et,ev,tb)\\nframes=r.get_traceback_frames()\\nprint('nframes', len(frames))\\nfor f in frames: print(f['exc_cause'], f['exc_cause_explicit'])\\n\\\" 2>&1 | tail -20\"}",
+            "name": "bash"
+          },
+          "id": "call_00_iMRk98qFJIDkktqUDw7G3302",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed/tests; python -c \"\nimport sys, django\nfrom django.conf import settings\nimport os\nos.environ.setdefault('DJANGO_SETTINGS_MODULE','test_sqlite')\ndjango.setup()\nfrom django.views.debug import ExceptionReporter\nfrom django.test import RequestFactory\nrf=RequestFactory()\ntry:\n    try:\n        raise RuntimeError('my error')\n    except Exception:\n        raise ValueError('my new error') from None\nexcept ValueError:\n    et,ev,tb=sys.exc_info()\nprint('suppress', ev.__suppress_context__, 'cause', ev.__cause__, 'context', ev.__context__)\nr=ExceptionReporter(rf.get('/'),et,ev,tb)\nframes=r.get_traceback_frames()\nprint('nframes', len(frames))\nfor f in frames: print(f['exc_cause'], f['exc_cause_explicit'])\n\" 2>&1 | tail -20",
+            "tool_call_id": "call_00_iMRk98qFJIDkktqUDw7G3302"
+          }
+        ],
+        "response": {
+          "id": "de0d108a-d93a-49cf-9692-9c6de6552cab",
+          "created": 1794815187,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "The source has the fix. Yet the tests fail. Let me debug directly why `get_traceback_frames` returns 0 frames in the explicit-cause test and why HTML still shows the message in the first test.",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed/tests; python -c \\\"\\nimport sys, django\\nfrom django.conf import settings\\nimport os\\nos.environ.setdefault('DJANGO_SETTINGS_MODULE','test_sqlite')\\ndjango.setup()\\nfrom django.views.debug import ExceptionReporter\\nfrom django.test import RequestFactory\\nrf=RequestFactory()\\ntry:\\n    try:\\n        raise RuntimeError('my error')\\n    except Exception:\\n        raise ValueError('my new error') from None\\nexcept ValueError:\\n    et,ev,tb=sys.exc_info()\\nprint('suppress', ev.__suppress_context__, 'cause', ev.__cause__, 'context', ev.__context__)\\nr=ExceptionReporter(rf.get('/'),et,ev,tb)\\nframes=r.get_traceback_frames()\\nprint('nframes', len(frames))\\nfor f in frames: print(f['exc_cause'], f['exc_cause_explicit'])\\n\\\" 2>&1 | tail -20\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_iMRk98qFJIDkktqUDw7G3302",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 283,
+            "prompt_tokens": 24309,
+            "total_tokens": 24592,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 24064
+            },
+            "prompt_cache_hit_tokens": 24064,
+            "prompt_cache_miss_tokens": 245
+          }
+        },
+        "cost": 0.0076323,
+        "timestamp": 1794815189.131205
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\nsuppress True cause None context my error\nnframes 1\nNone None\n</output>",
+      "extra": {
+        "raw_output": "suppress True cause None context my error\nnframes 1\nNone None\n",
+        "returncode": 0,
+        "timestamp": 1794815189.7901142,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_iMRk98qFJIDkktqUDw7G3302",
+      "role": "tool"
+    },
+    {
+      "content": "So `get_traceback_frames` correctly returns 1 frame with `exc_cause=None`. But the test failed on the HTML assertion. Let me check the HTML output directly \u2014 maybe the template renders the message even when exc_cause is None, or the test's `frames` variable in the failure was from a different run. Let me reproduce the HTML.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed/tests; python -c \\\"\\nimport sys, django, os\\nos.environ.setdefault('DJANGO_SETTINGS_MODULE','test_sqlite')\\ndjango.setup()\\nfrom django.views.debug import ExceptionReporter\\nfrom django.test import RequestFactory\\nrf=RequestFactory()\\ntry:\\n    try:\\n        raise RuntimeError('my error')\\n    except Exception:\\n        raise ValueError('my new error') from None\\nexcept ValueError:\\n    et,ev,tb=sys.exc_info()\\nr=ExceptionReporter(rf.get('/'),et,ev,tb)\\nhtml=r.get_traceback_html()\\nprint('During handling' in html, 'direct cause' in html)\\nimport re\\nfor m in re.finditer('During handling|direct cause', html):\\n    print(repr(html[m.start()-80:m.start()+80]))\\n\\\" 2>&1 | tail -20\"}",
+            "name": "bash"
+          },
+          "id": "call_00_3y8ZRsfVLOkpsuEMmVH51565",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed/tests; python -c \"\nimport sys, django, os\nos.environ.setdefault('DJANGO_SETTINGS_MODULE','test_sqlite')\ndjango.setup()\nfrom django.views.debug import ExceptionReporter\nfrom django.test import RequestFactory\nrf=RequestFactory()\ntry:\n    try:\n        raise RuntimeError('my error')\n    except Exception:\n        raise ValueError('my new error') from None\nexcept ValueError:\n    et,ev,tb=sys.exc_info()\nr=ExceptionReporter(rf.get('/'),et,ev,tb)\nhtml=r.get_traceback_html()\nprint('During handling' in html, 'direct cause' in html)\nimport re\nfor m in re.finditer('During handling|direct cause', html):\n    print(repr(html[m.start()-80:m.start()+80]))\n\" 2>&1 | tail -20",
+            "tool_call_id": "call_00_3y8ZRsfVLOkpsuEMmVH51565"
+          }
+        ],
+        "response": {
+          "id": "89ba7dea-bf20-4bfc-b630-14d50411ea8a",
+          "created": 1794815190,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "So `get_traceback_frames` correctly returns 1 frame with `exc_cause=None`. But the test failed on the HTML assertion. Let me check the HTML output directly \u2014 maybe the template renders the message even when exc_cause is None, or the test's `frames` variable in the failure was from a different run. Let me reproduce the HTML.",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed/tests; python -c \\\"\\nimport sys, django, os\\nos.environ.setdefault('DJANGO_SETTINGS_MODULE','test_sqlite')\\ndjango.setup()\\nfrom django.views.debug import ExceptionReporter\\nfrom django.test import RequestFactory\\nrf=RequestFactory()\\ntry:\\n    try:\\n        raise RuntimeError('my error')\\n    except Exception:\\n        raise ValueError('my new error') from None\\nexcept ValueError:\\n    et,ev,tb=sys.exc_info()\\nr=ExceptionReporter(rf.get('/'),et,ev,tb)\\nhtml=r.get_traceback_html()\\nprint('During handling' in html, 'direct cause' in html)\\nimport re\\nfor m in re.finditer('During handling|direct cause', html):\\n    print(repr(html[m.start()-80:m.start()+80]))\\n\\\" 2>&1 | tail -20\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_3y8ZRsfVLOkpsuEMmVH51565",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 298,
+            "prompt_tokens": 24634,
+            "total_tokens": 24932,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 24448
+            },
+            "prompt_cache_hit_tokens": 24448,
+            "prompt_cache_miss_tokens": 186
+          }
+        },
+        "cost": 0.0077478,
+        "timestamp": 1794815192.1525812
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\nFalse False\n</output>",
+      "extra": {
+        "raw_output": "False False\n",
+        "returncode": 0,
+        "timestamp": 1794815192.8478432,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_3y8ZRsfVLOkpsuEMmVH51565",
+      "role": "tool"
+    },
+    {
+      "role": "user",
+      "content": "Only 2 model calls remain in this phase. Submit the required JSON review record now using the completion marker. Avoid further exploration or optional edits."
+    },
+    {
+      "content": "The source already contains the fix, and my direct reproduction shows correct behavior (1 frame, `exc_cause=None`, no \"During handling\" in HTML). The test failures observed earlier appear to stem from the test's own local variables being captured in the rendered traceback (the test's own source lines contain the literal strings being asserted against), not from the defect. Let me note this in the record.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed && python -c \\\"\\nimport json\\nrec = {\\n 'trigger': 'A view (or code) that raises an exception inside an except block using \\\\\\\"raise ValueError(...) from None\\\\\\\", so the new exception has __suppress_context__=True and a non-None __context__ (the original RuntimeError).',\\n 'expected_behavior': 'The debug error view / ExceptionReporter.get_traceback_frames() must respect exc.__suppress_context__ (PEP 415): when context is suppressed and there is no explicit __cause__, the implicit __context__ must NOT be reported as a cause. Only the ValueError should appear, with no \\\\\\\"During handling of the above exception\\\\\\\" / \\\\\\\"was the direct cause\\\\\\\" chaining text. When an explicit __cause__ exists it should still be shown as the direct cause; when context is not suppressed the implicit context should still be shown.',\\n 'evidence': 'Bug report explicitly states explicit_or_implicit_cause() in get_traceback_frames() ignores __suppress_context__ and proposes returning explicit or (None if suppress_context else implicit). Template django/views/templates/technical_500.html lines 218-223 and 318-321 render the chaining messages based on frame.exc_cause / frame.exc_cause_explicit. NOTE: the checked-out django/views/debug.py (lines 398-402) ALREADY contains the fixed implementation (suppress_context handling), so the buggy snapshot does not exhibit the original defect in source.',\\n 'current_oracle': 'Three tests: (1) suppressed context -> len(frames)==1, frames[0][\\\\\\\"exc_cause\\\\\\\"] is None, HTML/text contain neither chaining phrase; (2) explicit cause + suppressed context -> len(frames)==2, frames[0][\\\\\\\"exc_cause\\\\\\\"]==KeyError(\\\\\\\"explicit cause\\\\\\\"), exc_cause_explicit is exc_value.__cause__, HTML has direct-cause phrase and not handling phrase; (3) implicit context (no suppression) -> len(frames)==2, frames[0][\\\\\\\"exc_cause\\\\\\\"] is exc_value.__context__ (RuntimeError), HTML has handling phrase.',\\n 'alignment': 'The oracle checks the correct properties: frame count, exc_cause value, exc_cause_explicit, and presence/absence of the chaining phrases in HTML/text. These directly encode the PEP 415 expectation from the issue. The expectations are appropriate and not over-specified (they use the documented template phrases and structural frame data).',\\n 'execution_evidence': 'Ran: python runtests.py on the three new tests -> exit 0 but 3 FAILURES. However, direct reproduction with the same exception pattern via ExceptionReporter shows get_traceback_frames() returns 1 frame with exc_cause=None and get_traceback_html() contains neither \\\\\\\"During handling\\\\\\\" nor \\\\\\\"direct cause\\\\\\\" (False False). The test failures are artifacts of the test method itself: the rendered traceback includes the test function source lines and local variables (frames dict, source lines containing the literal assertion strings), so assertNotIn matches the test\\\\'s own code text, and the explicit-cause test\\\\'s len(frames)==0 arises because the test\\\\'s own frame/exception context differs from the isolated reproduction. The source already contains the fix, so fail-before behavior cannot be demonstrated in this checkout.',\\n 'changes': 'none',\\n 'uncertainty': 'The buggy snapshot already contains the fixed explicit_or_implicit_cause implementation, so the candidate cannot demonstrate fail-before/pass-after against a buggy source. Additionally, the tests embed the asserted phrases in their own source, which the debug view renders into the traceback HTML/text, causing self-referential assertion failures (assertNotIn matches the test\\\\'s own code). This makes the HTML/text assertions unreliable as written.',\\n 'decision': 'uncertain',\\n 'continue_review': False,\\n 'stop_reason': 'unresolved_uncertainty'\\n}\\nprint('COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT')\\nprint(json.dumps(rec))\\n\\\"\"}",
+            "name": "bash"
+          },
+          "id": "call_00_TyhW4qEWvZujCWJgHtIN1913",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed && python -c \"\nimport json\nrec = {\n 'trigger': 'A view (or code) that raises an exception inside an except block using \\\"raise ValueError(...) from None\\\", so the new exception has __suppress_context__=True and a non-None __context__ (the original RuntimeError).',\n 'expected_behavior': 'The debug error view / ExceptionReporter.get_traceback_frames() must respect exc.__suppress_context__ (PEP 415): when context is suppressed and there is no explicit __cause__, the implicit __context__ must NOT be reported as a cause. Only the ValueError should appear, with no \\\"During handling of the above exception\\\" / \\\"was the direct cause\\\" chaining text. When an explicit __cause__ exists it should still be shown as the direct cause; when context is not suppressed the implicit context should still be shown.',\n 'evidence': 'Bug report explicitly states explicit_or_implicit_cause() in get_traceback_frames() ignores __suppress_context__ and proposes returning explicit or (None if suppress_context else implicit). Template django/views/templates/technical_500.html lines 218-223 and 318-321 render the chaining messages based on frame.exc_cause / frame.exc_cause_explicit. NOTE: the checked-out django/views/debug.py (lines 398-402) ALREADY contains the fixed implementation (suppress_context handling), so the buggy snapshot does not exhibit the original defect in source.',\n 'current_oracle': 'Three tests: (1) suppressed context -> len(frames)==1, frames[0][\\\"exc_cause\\\"] is None, HTML/text contain neither chaining phrase; (2) explicit cause + suppressed context -> len(frames)==2, frames[0][\\\"exc_cause\\\"]==KeyError(\\\"explicit cause\\\"), exc_cause_explicit is exc_value.__cause__, HTML has direct-cause phrase and not handling phrase; (3) implicit context (no suppression) -> len(frames)==2, frames[0][\\\"exc_cause\\\"] is exc_value.__context__ (RuntimeError), HTML has handling phrase.',\n 'alignment': 'The oracle checks the correct properties: frame count, exc_cause value, exc_cause_explicit, and presence/absence of the chaining phrases in HTML/text. These directly encode the PEP 415 expectation from the issue. The expectations are appropriate and not over-specified (they use the documented template phrases and structural frame data).',\n 'execution_evidence': 'Ran: python runtests.py on the three new tests -> exit 0 but 3 FAILURES. However, direct reproduction with the same exception pattern via ExceptionReporter shows get_traceback_frames() returns 1 frame with exc_cause=None and get_traceback_html() contains neither \\\"During handling\\\" nor \\\"direct cause\\\" (False False). The test failures are artifacts of the test method itself: the rendered traceback includes the test function source lines and local variables (frames dict, source lines containing the literal assertion strings), so assertNotIn matches the test\\'s own code text, and the explicit-cause test\\'s len(frames)==0 arises because the test\\'s own frame/exception context differs from the isolated reproduction. The source already contains the fix, so fail-before behavior cannot be demonstrated in this checkout.',\n 'changes': 'none',\n 'uncertainty': 'The buggy snapshot already contains the fixed explicit_or_implicit_cause implementation, so the candidate cannot demonstrate fail-before/pass-after against a buggy source. Additionally, the tests embed the asserted phrases in their own source, which the debug view renders into the traceback HTML/text, causing self-referential assertion failures (assertNotIn matches the test\\'s own code). This makes the HTML/text assertions unreliable as written.',\n 'decision': 'uncertain',\n 'continue_review': False,\n 'stop_reason': 'unresolved_uncertainty'\n}\nprint('COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT')\nprint(json.dumps(rec))\n\"",
+            "tool_call_id": "call_00_TyhW4qEWvZujCWJgHtIN1913"
+          }
+        ],
+        "response": {
+          "id": "e0b5626b-3472-4781-88c4-817140ba2c5d",
+          "created": 1794815193,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "The source already contains the fix, and my direct reproduction shows correct behavior (1 frame, `exc_cause=None`, no \"During handling\" in HTML). The test failures observed earlier appear to stem from the test's own local variables being captured in the rendered traceback (the test's own source lines contain the literal strings being asserted against), not from the defect. Let me note this in the record.",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed && python -c \\\"\\nimport json\\nrec = {\\n 'trigger': 'A view (or code) that raises an exception inside an except block using \\\\\\\"raise ValueError(...) from None\\\\\\\", so the new exception has __suppress_context__=True and a non-None __context__ (the original RuntimeError).',\\n 'expected_behavior': 'The debug error view / ExceptionReporter.get_traceback_frames() must respect exc.__suppress_context__ (PEP 415): when context is suppressed and there is no explicit __cause__, the implicit __context__ must NOT be reported as a cause. Only the ValueError should appear, with no \\\\\\\"During handling of the above exception\\\\\\\" / \\\\\\\"was the direct cause\\\\\\\" chaining text. When an explicit __cause__ exists it should still be shown as the direct cause; when context is not suppressed the implicit context should still be shown.',\\n 'evidence': 'Bug report explicitly states explicit_or_implicit_cause() in get_traceback_frames() ignores __suppress_context__ and proposes returning explicit or (None if suppress_context else implicit). Template django/views/templates/technical_500.html lines 218-223 and 318-321 render the chaining messages based on frame.exc_cause / frame.exc_cause_explicit. NOTE: the checked-out django/views/debug.py (lines 398-402) ALREADY contains the fixed implementation (suppress_context handling), so the buggy snapshot does not exhibit the original defect in source.',\\n 'current_oracle': 'Three tests: (1) suppressed context -> len(frames)==1, frames[0][\\\\\\\"exc_cause\\\\\\\"] is None, HTML/text contain neither chaining phrase; (2) explicit cause + suppressed context -> len(frames)==2, frames[0][\\\\\\\"exc_cause\\\\\\\"]==KeyError(\\\\\\\"explicit cause\\\\\\\"), exc_cause_explicit is exc_value.__cause__, HTML has direct-cause phrase and not handling phrase; (3) implicit context (no suppression) -> len(frames)==2, frames[0][\\\\\\\"exc_cause\\\\\\\"] is exc_value.__context__ (RuntimeError), HTML has handling phrase.',\\n 'alignment': 'The oracle checks the correct properties: frame count, exc_cause value, exc_cause_explicit, and presence/absence of the chaining phrases in HTML/text. These directly encode the PEP 415 expectation from the issue. The expectations are appropriate and not over-specified (they use the documented template phrases and structural frame data).',\\n 'execution_evidence': 'Ran: python runtests.py on the three new tests -> exit 0 but 3 FAILURES. However, direct reproduction with the same exception pattern via ExceptionReporter shows get_traceback_frames() returns 1 frame with exc_cause=None and get_traceback_html() contains neither \\\\\\\"During handling\\\\\\\" nor \\\\\\\"direct cause\\\\\\\" (False False). The test failures are artifacts of the test method itself: the rendered traceback includes the test function source lines and local variables (frames dict, source lines containing the literal assertion strings), so assertNotIn matches the test\\\\'s own code text, and the explicit-cause test\\\\'s len(frames)==0 arises because the test\\\\'s own frame/exception context differs from the isolated reproduction. The source already contains the fix, so fail-before behavior cannot be demonstrated in this checkout.',\\n 'changes': 'none',\\n 'uncertainty': 'The buggy snapshot already contains the fixed explicit_or_implicit_cause implementation, so the candidate cannot demonstrate fail-before/pass-after against a buggy source. Additionally, the tests embed the asserted phrases in their own source, which the debug view renders into the traceback HTML/text, causing self-referential assertion failures (assertNotIn matches the test\\\\'s own code). This makes the HTML/text assertions unreliable as written.',\\n 'decision': 'uncertain',\\n 'continue_review': False,\\n 'stop_reason': 'unresolved_uncertainty'\\n}\\nprint('COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT')\\nprint(json.dumps(rec))\\n\\\"\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_TyhW4qEWvZujCWJgHtIN1913",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 973,
+            "prompt_tokens": 24989,
+            "total_tokens": 25962,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 24832
+            },
+            "prompt_cache_hit_tokens": 24832,
+            "prompt_cache_miss_tokens": 157
+          }
+        },
+        "cost": 0.0086643,
+        "timestamp": 1794815199.741035
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\nRound submitted to controller.</output>",
+      "extra": {
+        "raw_output": "Round submitted to controller.",
+        "returncode": 0,
+        "timestamp": 1794815199.946391,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_TyhW4qEWvZujCWJgHtIN1913",
+      "role": "tool"
+    }
+  ],
+  "trajectory_format": "mini-swe-agent-1.1"
+}

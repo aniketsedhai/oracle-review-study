@@ -1,0 +1,38 @@
+diff --git a/tests/middleware/tests.py b/tests/middleware/tests.py
+index 14c9284..013d846 100644
+--- a/tests/middleware/tests.py
++++ b/tests/middleware/tests.py
+@@ -19,6 +19,7 @@ from django.middleware.common import (
+ from django.middleware.gzip import GZipMiddleware
+ from django.middleware.http import ConditionalGetMiddleware
+ from django.test import RequestFactory, SimpleTestCase, override_settings
++from django.utils.deprecation import MiddlewareMixin
+ 
+ int2byte = struct.Struct(">B").pack
+ 
+@@ -953,3 +954,25 @@ class ETagGZipMiddlewareTest(SimpleTestCase):
+         next_request = self.rf.get('/', HTTP_ACCEPT_ENCODING='gzip, deflate', HTTP_IF_NONE_MATCH=gzip_etag)
+         next_response = ConditionalGetMiddleware(get_response)(next_request)
+         self.assertEqual(next_response.status_code, 304)
++
++
++class AsyncMiddlewareMixinResponseTests(SimpleTestCase):
++    """The first middleware receives an HttpResponse, not a coroutine."""
++
++    async def test_first_middleware_process_response_receives_response(self):
++        received = []
++
++        class DummyMiddleware(MiddlewareMixin):
++            def process_response(self, request, response):
++                received.append(response)
++                return response
++
++        async def get_response(request):
++            return HttpResponse('ok')
++
++        middleware = DummyMiddleware(get_response)
++        request = RequestFactory().get('/')
++        response = await middleware(request)
++        self.assertIsInstance(response, HttpResponse)
++        self.assertEqual(len(received), 1)
++        self.assertIsInstance(received[0], HttpResponse)

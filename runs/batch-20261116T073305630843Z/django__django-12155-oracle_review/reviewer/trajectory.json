@@ -1,0 +1,999 @@
+{
+  "info": {
+    "model_stats": {
+      "instance_cost": 0.0253431,
+      "api_calls": 10
+    },
+    "config": {
+      "agent": {
+        "system_template": "You are a software testing agent using a bash tool. Every response must include at least one bash tool call.",
+        "instance_template": "{{task}}",
+        "step_limit": 0,
+        "cost_limit": 0.0,
+        "wall_time_limit_seconds": 0,
+        "max_consecutive_format_errors": 3,
+        "output_path": null
+      },
+      "agent_type": "minisweagent.agents.default.DefaultAgent",
+      "model": {
+        "model_name": "deepseek/deepseek-flash",
+        "model_kwargs": {
+          "api_base": "https://api.deepseek.com",
+          "temperature": 0,
+          "max_tokens": 4096,
+          "timeout": 90,
+          "num_retries": 0,
+          "extra_body": {
+            "thinking": {
+              "type": "disabled"
+            }
+          }
+        },
+        "litellm_model_registry": null,
+        "set_cache_control": null,
+        "cost_tracking": "default",
+        "format_error_template": "{{ error }}",
+        "observation_template": "{% if output.exception_info %}<exception>{{output.exception_info}}</exception>\n{% endif %}<returncode>{{output.returncode}}</returncode>\n<output>\n{{output.output}}</output>",
+        "multimodal_regex": ""
+      },
+      "model_type": "runtime.GuardedModel",
+      "environment": {
+        "image": "docker.io/swebench/sweb.eval.x86_64.django_1776_django-12155:latest",
+        "cwd": "/testbed",
+        "env": {
+          "PAGER": "cat",
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "PYTHONUNBUFFERED": "1",
+          "HOME": "/tmp",
+          "GIT_CONFIG_COUNT": "1",
+          "GIT_CONFIG_KEY_0": "safe.directory",
+          "GIT_CONFIG_VALUE_0": "/testbed",
+          "PATH": "/opt/miniconda3/envs/testbed/bin:/opt/miniconda3/condabin:/opt/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          "PYTHONPATH": "/testbed"
+        },
+        "forward_env": [],
+        "timeout": 60,
+        "executable": "docker",
+        "run_args": [
+          "--rm",
+          "--platform",
+          "linux/amd64",
+          "--network",
+          "none"
+        ],
+        "container_timeout": "2h",
+        "pull_timeout": 180,
+        "interpreter": [
+          "runuser",
+          "-u",
+          "nobody",
+          "--",
+          "bash",
+          "-c"
+        ]
+      },
+      "environment_type": "minisweagent.environments.docker.DockerEnvironment"
+    },
+    "mini_version": "2.4.6",
+    "exit_status": "",
+    "submission": ""
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a software testing agent using a bash tool. Every response must include at least one bash tool call."
+    },
+    {
+      "role": "user",
+      "content": "# Oracle reviewer\n\nYou are reviewing a candidate bug-reproducing unit-test patch. Your goal is to\ncheck whether its oracle\u2014the condition used to judge correctness\u2014matches the\nintended behavior supported by the bug report and available repository evidence.\nKeep the candidate when appropriate; revise it when you identify a supported\nimprovement. Do not assume a revision is necessary.\n\n## Inputs and access\n\nThe controller supplies the original bug report, candidate test patch, permitted\ntest paths, current review round, and remaining resource limits. The candidate is\nalready applied to the buggy checkout. This is a fresh conversation: you do not\nreceive the generator's conversation history. Subsequent rounds retain your own\nreview history for this instance.\n\nYou may inspect the buggy source, documentation, and existing tests and execute\nrelevant commands in the provided environment. Existing tests are optional\nevidence, not a prerequisite for creating a test.\n\nDo not access the internet, reference fixes, golden tests, later commits, or\nevaluator artifacts. Modify only the test paths permitted by the controller. Do\nnot change production code or project configuration, disable tests, remove\nexisting tests, or weaken existing checks. Do not implement mutation testing.\n\n## One review round\n\n1. Identify the input, operation, or state that triggers the reported defect.\n2. State the expected behavior and its supporting evidence. Cite relevant issue\n   text and repository file locations, including line numbers where practical.\n   Distinguish explicit requirements from inferences based on callers, related\n   implementations, code patterns, or invariants. Current buggy output alone\n   does not establish correct behavior.\n3. Identify the candidate's oracle and explain whether it observes the expected\n   behavior. Require an oracle appropriate to the issue: for crash bugs,\n   successful execution may be sufficient; for incorrect-output bugs, check the\n   relevant output or property explicitly. Do not invent an exact expected value\n   when evidence supports only a broader property.\n4. Run the relevant tests where feasible. Inspect whether any failure comes from\n   the reported defect, an unsupported expectation, or unrelated setup. Preserve\n   the real command exit status; avoid pipelines that hide test failures.\n5. Keep or revise the candidate. If you revise it, execute the revised test where\n   feasible and examine its result. Focus changes on oracle alignment; avoid\n   unrelated cleanup or mandatory simplification and behavior separation.\n6. Return the review record described below, including unresolved concerns and\n   whether another round would have a concrete purpose.\n\nA test failing on buggy code is not sufficient evidence of oracle correctness.\nPassing on buggy code may mean the trigger was missed or the check is inadequate;\ndo not reverse a justified expectation merely to force a failure. Only separate\nevaluation can establish fail-before/pass-after behavior against the reference\nfix.\n\n## Review record\n\nReturn a record for the current round with these fields:\n\n- **Trigger:** reported input, operation, or state.\n- **Expected behavior:** what should happen.\n- **Evidence:** supporting issue text and/or repository locations; label inferences.\n- **Current oracle:** assertion, expected exception, or implicit check.\n- **Alignment:** whether the oracle checks the supported expectation, and why.\n- **Execution evidence:** commands, exit codes, relevant results, and failure\n  explanation. State explicitly when execution was not possible.\n- **Changes:** edits made this round, or \"none\".\n- **Uncertainty:** remaining ambiguity or limitations, or \"none identified\".\n- **Decision:** `keep`, `revise`, or `uncertain`. `revise` means this round made\n  changes; it does not by itself request another round.\n- **Continue review:** `yes` only if an actionable concern remains and another\n  round could resolve it; otherwise `no`. Explain the next action if `yes`.\n- **Stop reason:** `aligned`, `unresolved_uncertainty`, `round_limit`,\n  `resource_limit`, or `continue`.\n\nDo not claim the test is confirmed to reproduce the bug. Describe the evidence\navailable in the buggy checkout and leave final reproduction grading to the\nevaluator.\n\n## Stopping rules\n\nStop when no actionable oracle concern remains, available evidence cannot resolve\nremaining uncertainty, three rounds have completed, or the controller's resource\nlimit is reached. Do not repeat a review solely to fill the round allowance.\n\nThe controller enforces limits and saves patches. Its limits take precedence over\na request to continue. If interrupted, the controller will preserve the latest\napplicable, permitted saved patch; it must not select a patch using hidden\nevaluation outcomes.\n\n\nBUG REPORT\ndocutils reports an error rendering view docstring when the first line is not empty\nDescription\n\t\nCurrently admindoc works correctly only with docstrings where the first line is empty, and all Django docstrings are formatted in this way.\nHowever usually the docstring text starts at the first line, e.g.:\ndef test():\n\t\"\"\"test tests something.\n\t\"\"\"\nand this cause an error:\nError in \"default-role\" directive:\nno content permitted.\n.. default-role:: cmsreference\nThe culprit is this code in trim_docstring:\nindent = min(len(line) - len(line.lstrip()) for line in lines if line.lstrip())\nThe problem is that the indentation of the first line is 0.\nThe solution is to skip the first line:\nindent = min(len(line) - len(line.lstrip()) for line in lines[1:] if line.lstrip())\nThanks.\n\n\nPERMITTED TEST ROOTS\n[\"tests\"]\n\nCANDIDATE PATCH (already applied)\ndiff --git a/tests/admin_docs/test_utils.py b/tests/admin_docs/test_utils.py\nindex 17ea912..892ec24 100644\n--- a/tests/admin_docs/test_utils.py\n+++ b/tests/admin_docs/test_utils.py\n@@ -118,3 +118,50 @@ class TestUtils(AdminDocsSimpleTestCase):\n         markup = '<p>reST, <cite>interpreted text</cite>, default role.</p>\\n'\n         parts = docutils.core.publish_parts(source=source, writer_name=\"html4css1\")\n         self.assertEqual(parts['fragment'], markup)\n+\n+\n+@unittest.skipUnless(docutils_is_available, \"no docutils installed.\")\n+class TestTrimDocstring(AdminDocsSimpleTestCase):\n+    def test_first_line_not_empty(self):\n+        \"\"\"Docstrings whose text starts on the first line are trimmed.\"\"\"\n+        docstring = (\n+            \"test tests something.\\n\"\n+            \"\\n\"\n+            \"    Indented body line.\\n\"\n+            \"    Another indented line.\\n\"\n+            \"    \"\n+        )\n+        self.assertEqual(\n+            trim_docstring(docstring),\n+            \"test tests something.\\n\\n    Indented body line.\\n    Another indented line.\",\n+        )\n+\n+    def test_first_line_not_empty_single_line(self):\n+        self.assertEqual(trim_docstring(\"test tests something.\\n    \"), \"test tests something.\")\n+\n+    def test_first_line_not_empty_parse_docstring(self):\n+        docstring = (\n+            \"test tests something.\\n\"\n+            \"\\n\"\n+            \"    Body text.\\n\"\n+            \"\\n\"\n+            \"    some_metadata: some data\\n\"\n+            \"    \"\n+        )\n+        title, description, metadata = parse_docstring(docstring)\n+        self.assertEqual(title, \"test tests something.\")\n+        self.assertEqual(description, \"Body text.\")\n+        self.assertEqual(metadata, {\"some_metadata\": \"some data\"})\n+\n+    def test_first_line_not_empty_parse_rst(self):\n+        docstring = (\n+            \"test tests something.\\n\"\n+            \"\\n\"\n+            \"    Body with `interpreted text`.\\n\"\n+            \"    \"\n+        )\n+        title, description, metadata = parse_docstring(docstring)\n+        self.assertEqual(title, \"test tests something.\")\n+        output = parse_rst(description, \"view\", \"view:admindocs\")\n+        self.assertIn(\"Body with\", output)\n+        self.assertNotIn(\"default-role\", output)\n\n\nREVIEW ROUND 1\nFinish this round with one standalone bash tool call whose output is:\nCOMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\nfollowed by one JSON object containing these keys:\ntrigger, expected_behavior, evidence, current_oracle, alignment,\nexecution_evidence, changes, uncertainty, decision, continue_review, stop_reason.\nUse a JSON boolean for continue_review. Set stop_reason to continue only when\ncontinue_review is true. Otherwise choose aligned, unresolved_uncertainty,\nround_limit, or resource_limit. You may print both lines with a Python command.\nDo not write the review record into the project checkout.\n"
+    },
+    {
+      "content": "I'll start by inspecting the buggy source and the candidate test.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /workspace 2>/dev/null || cd /; ls; find / -name \\\"utils.py\\\" -path \\\"*admin_docs*\\\" 2>/dev/null\"}",
+            "name": "bash"
+          },
+          "id": "call_00_1ifJNUqYVnYb6kRSPEts7484",
+          "type": "function"
+        },
+        {
+          "index": 1,
+          "function": {
+            "arguments": "{\"command\": \"find / -path \\\"*admin_docs*\\\" -name \\\"*.py\\\" 2>/dev/null | head -50\"}",
+            "name": "bash"
+          },
+          "id": "call_01_OfG18ozSjDfTRNU6trzt7390",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /workspace 2>/dev/null || cd /; ls; find / -name \"utils.py\" -path \"*admin_docs*\" 2>/dev/null",
+            "tool_call_id": "call_00_1ifJNUqYVnYb6kRSPEts7484"
+          },
+          {
+            "command": "find / -path \"*admin_docs*\" -name \"*.py\" 2>/dev/null | head -50",
+            "tool_call_id": "call_01_OfG18ozSjDfTRNU6trzt7390"
+          }
+        ],
+        "response": {
+          "id": "ed7db306-cf00-4b8d-b723-a6ca56de449d",
+          "created": 1794814582,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "I'll start by inspecting the buggy source and the candidate test.",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /workspace 2>/dev/null || cd /; ls; find / -name \\\"utils.py\\\" -path \\\"*admin_docs*\\\" 2>/dev/null\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_1ifJNUqYVnYb6kRSPEts7484",
+                    "type": "function"
+                  },
+                  {
+                    "index": 1,
+                    "function": {
+                      "arguments": "{\"command\": \"find / -path \\\"*admin_docs*\\\" -name \\\"*.py\\\" 2>/dev/null | head -50\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_01_OfG18ozSjDfTRNU6trzt7390",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 135,
+            "prompt_tokens": 2175,
+            "total_tokens": 2310,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 1024
+            },
+            "prompt_cache_hit_tokens": 1024,
+            "prompt_cache_miss_tokens": 1151
+          }
+        },
+        "cost": 0.0008145,
+        "timestamp": 1794814583.779496
+      }
+    },
+    {
+      "content": "<returncode>1</returncode>\n<output>\nbin\nboot\ndev\netc\nhome\nlib\nlib32\nlib64\nlibx32\nmedia\nminiconda.sh\nmnt\nopt\nproc\nroot\nrun\nsbin\nsrv\nsys\ntestbed\ntmp\nusr\nvar\n</output>",
+      "extra": {
+        "raw_output": "bin\nboot\ndev\netc\nhome\nlib\nlib32\nlib64\nlibx32\nmedia\nminiconda.sh\nmnt\nopt\nproc\nroot\nrun\nsbin\nsrv\nsys\ntestbed\ntmp\nusr\nvar\n",
+        "returncode": 1,
+        "timestamp": 1794814584.9151301,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_1ifJNUqYVnYb6kRSPEts7484",
+      "role": "tool"
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n/testbed/tests/admin_docs/test_views.py\n/testbed/tests/admin_docs/models.py\n/testbed/tests/admin_docs/tests.py\n/testbed/tests/admin_docs/namespace_urls.py\n/testbed/tests/admin_docs/test_utils.py\n/testbed/tests/admin_docs/__init__.py\n/testbed/tests/admin_docs/views.py\n/testbed/tests/admin_docs/urls.py\n/testbed/tests/admin_docs/test_middleware.py\n</output>",
+      "extra": {
+        "raw_output": "/testbed/tests/admin_docs/test_views.py\n/testbed/tests/admin_docs/models.py\n/testbed/tests/admin_docs/tests.py\n/testbed/tests/admin_docs/namespace_urls.py\n/testbed/tests/admin_docs/test_utils.py\n/testbed/tests/admin_docs/__init__.py\n/testbed/tests/admin_docs/views.py\n/testbed/tests/admin_docs/urls.py\n/testbed/tests/admin_docs/test_middleware.py\n",
+        "returncode": 0,
+        "timestamp": 1794814584.916281,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_01_OfG18ozSjDfTRNU6trzt7390",
+      "role": "tool"
+    },
+    {
+      "content": "",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; cat django/contrib/admindocs/utils.py; echo ====; cat tests/admin_docs/test_utils.py\"}",
+            "name": "bash"
+          },
+          "id": "call_00_iF9JPiTczMgUveP3FWmE1569",
+          "type": "function"
+        },
+        {
+          "index": 1,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; git log --oneline -3; git status\"}",
+            "name": "bash"
+          },
+          "id": "call_01_uurceWMh7jZKB8n8UyNF6088",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed; cat django/contrib/admindocs/utils.py; echo ====; cat tests/admin_docs/test_utils.py",
+            "tool_call_id": "call_00_iF9JPiTczMgUveP3FWmE1569"
+          },
+          {
+            "command": "cd /testbed; git log --oneline -3; git status",
+            "tool_call_id": "call_01_uurceWMh7jZKB8n8UyNF6088"
+          }
+        ],
+        "response": {
+          "id": "4200ca83-ef3c-442e-b756-b9862e00dd7c",
+          "created": 1794814585,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; cat django/contrib/admindocs/utils.py; echo ====; cat tests/admin_docs/test_utils.py\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_iF9JPiTczMgUveP3FWmE1569",
+                    "type": "function"
+                  },
+                  {
+                    "index": 1,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; git log --oneline -3; git status\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_01_uurceWMh7jZKB8n8UyNF6088",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 104,
+            "prompt_tokens": 2520,
+            "total_tokens": 2624,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 2304
+            },
+            "prompt_cache_hit_tokens": 2304,
+            "prompt_cache_miss_tokens": 216
+          }
+        },
+        "cost": 0.0008807999999999999,
+        "timestamp": 1794814586.1354592
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n\"Misc. utility functions/classes for admin documentation generator.\"\n\nimport re\nfrom email.errors import HeaderParseError\nfrom email.parser import HeaderParser\n\nfrom django.urls import reverse\nfrom django.utils.regex_helper import _lazy_re_compile\nfrom django.utils.safestring import mark_safe\n\ntry:\n    import docutils.core\n    import docutils.nodes\n    import docutils.parsers.rst.roles\nexcept ImportError:\n    docutils_is_available = False\nelse:\n    docutils_is_available = True\n\n\ndef get_view_name(view_func):\n    mod_name = view_func.__module__\n    view_name = getattr(view_func, '__qualname__', view_func.__class__.__name__)\n    return mod_name + '.' + view_name\n\n\ndef trim_docstring(docstring):\n    \"\"\"\n    Uniformly trim leading/trailing whitespace from docstrings.\n\n    Based on https://www.python.org/dev/peps/pep-0257/#handling-docstring-indentation\n    \"\"\"\n    if not docstring or not docstring.strip():\n        return ''\n    # Convert tabs to spaces and split into lines\n    lines = docstring.expandtabs().splitlines()\n    indent = min(len(line) - len(line.lstrip()) for line in lines if line.lstrip())\n    trimmed = [lines[0].lstrip()] + [line[indent:].rstrip() for line in lines[1:]]\n    return \"\\n\".join(trimmed).strip()\n\n\ndef parse_docstring(docstring):\n    \"\"\"\n    Parse out the parts of a docstring.  Return (title, body, metadata).\n    \"\"\"\n    docstring = trim_docstring(docstring)\n    parts = re.split(r'\\n{2,}', docstring)\n    title = parts[0]\n    if len(parts) == 1:\n        body = ''\n        metadata = {}\n    else:\n        parser = HeaderParser()\n        try:\n            metadata = parser.parsestr(parts[-1])\n        except HeaderParseError:\n            metadata = {}\n            body = \"\\n\\n\".join(parts[1:])\n        else:\n            metadata = dict(metadata.items())\n            if metadata:\n                body = \"\\n\\n\".join(parts[1:-1])\n            else:\n                body = \"\\n\\n\".join(parts[1:])\n    return title, body, metadata\n\n\ndef parse_rst(text, default_reference_context, thing_being_parsed=None):\n    \"\"\"\n    Convert the string from reST to an XHTML fragment.\n    \"\"\"\n    overrides = {\n        'doctitle_xform': True,\n        'initial_header_level': 3,\n        \"default_reference_context\": default_reference_context,\n        \"link_base\": reverse('django-admindocs-docroot').rstrip('/'),\n        'raw_enabled': False,\n        'file_insertion_enabled': False,\n    }\n    thing_being_parsed = thing_being_parsed and '<%s>' % thing_being_parsed\n    # Wrap ``text`` in some reST that sets the default role to ``cmsreference``,\n    # then restores it.\n    source = \"\"\"\n.. default-role:: cmsreference\n\n%s\n\n.. default-role::\n\"\"\"\n    parts = docutils.core.publish_parts(\n        source % text,\n        source_path=thing_being_parsed, destination_path=None,\n        writer_name='html', settings_overrides=overrides,\n    )\n    return mark_safe(parts['fragment'])\n\n\n#\n# reST roles\n#\nROLES = {\n    'model': '%s/models/%s/',\n    'view': '%s/views/%s/',\n    'template': '%s/templates/%s/',\n    'filter': '%s/filters/#%s',\n    'tag': '%s/tags/#%s',\n}\n\n\ndef create_reference_role(rolename, urlbase):\n    def _role(name, rawtext, text, lineno, inliner, options=None, content=None):\n        if options is None:\n            options = {}\n        node = docutils.nodes.reference(\n            rawtext,\n            text,\n            refuri=(urlbase % (\n                inliner.document.settings.link_base,\n                text.lower(),\n            )),\n            **options\n        )\n        return [node], []\n    docutils.parsers.rst.roles.register_canonical_role(rolename, _role)\n\n\ndef default_reference_role(name, rawtext, text, lineno, inliner, options=None, content=None):\n    if options is None:\n        options = {}\n    context = inliner.document.settings.default_reference_context\n    node = docutils.nodes.reference(\n        rawtext,\n        text,\n        refuri=(ROLES[context] % (\n            inliner.document.settings.link_base,\n            text.lower(),\n        )),\n        **options\n    )\n    return [node], []\n\n\nif docutils_is_available:\n    docutils.parsers.rst.roles.register_canonical_role('cmsreference', default_reference_role)\n\n    for name, urlbase in ROLES.items():\n        create_reference_role(name, urlbase)\n\n# Match the beginning of a named or unnamed group.\nnamed_group_matcher = _lazy_re_compile(r'\\(\\?P(<\\w+>)')\nunnamed_group_matcher = _lazy_re_compile(r'\\(')\n\n\ndef replace_named_groups(pattern):\n    r\"\"\"\n    Find named groups in `pattern` and replace them with the group name. E.g.,\n    1. ^(?P<a>\\w+)/b/(\\w+)$ ==> ^<a>/b/(\\w+)$\n    2. ^(?P<a>\\w+)/b/(?P<c>\\w+)/$ ==> ^<a>/b/<c>/$\n    3. ^(?P<a>\\w+)/b/(\\w+) ==> ^<a>/b/(\\w+)\n    4. ^(?P<a>\\w+)/b/(?P<c>\\w+) ==> ^<a>/b/<c>\n    \"\"\"\n    named_group_indices = [\n        (m.start(0), m.end(0), m.group(1))\n        for m in named_group_matcher.finditer(pattern)\n    ]\n    # Tuples of (named capture group pattern, group name).\n    group_pattern_and_name = []\n    # Loop over the groups and their start and end indices.\n    for start, end, group_name in named_group_indices:\n        # Handle nested parentheses, e.g. '^(?P<a>(x|y))/b'.\n        unmatched_open_brackets, prev_char = 1, None\n        for idx, val in enumerate(pattern[end:]):\n            # Check for unescaped `(` and `)`. They mark the start and end of a\n            # nested group.\n            if val == '(' and prev_char != '\\\\':\n                unmatched_open_brackets += 1\n            elif val == ')' and prev_char != '\\\\':\n                unmatched_open_brackets -= 1\n            prev_char = val\n            # If brackets are balanced, the end of the string for the current\n            # named capture group pattern has been reached.\n            if unmatched_open_brackets == 0:\n                group_pattern_and_name.append((pattern[start:end + idx + 1], group_name))\n                break\n\n    # Replace the string for named capture groups with their group names.\n    for group_pattern, group_name in group_pattern_and_name:\n        pattern = pattern.replace(group_pattern, group_name)\n    return pattern\n\n\ndef replace_unnamed_groups(pattern):\n    r\"\"\"\n    Find unnamed groups in `pattern` and replace them with '<var>'. E.g.,\n    1. ^(?P<a>\\w+)/b/(\\w+)$ ==> ^(?P<a>\\w+)/b/<var>$\n    2. ^(?P<a>\\w+)/b/((x|y)\\w+)$ ==> ^(?P<a>\\w+)/b/<var>$\n    3. ^(?P<a>\\w+)/b/(\\w+) ==> ^(?P<a>\\w+)/b/<var>\n    4. ^(?P<a>\\w+)/b/((x|y)\\w+) ==> ^(?P<a>\\w+)/b/<var>\n    \"\"\"\n    unnamed_group_indices = [m.start(0) for m in unnamed_group_matcher.finditer(pattern)]\n    # Indices of the start of unnamed capture groups.\n    group_indices = []\n    # Loop over the start indices of the groups.\n    for start in unnamed_group_indices:\n        # Handle nested parentheses, e.g. '^b/((x|y)\\w+)$'.\n        unmatched_open_brackets, prev_char = 1, None\n        for idx, val in enumerate(pattern[start + 1:]):\n            # Check for unescaped `(` and `)`. They mark the start and end of\n            # a nested group.\n            if val == '(' and prev_char != '\\\\':\n                unmatched_open_brackets += 1\n            elif val == ')' and prev_char != '\\\\':\n                unmatched_open_brackets -= 1\n            prev_char = val\n\n            if unmatched_open_brackets == 0:\n                group_indices.append((start, start + 2 + idx))\n                break\n    # Remove unnamed group matches inside other unnamed capture groups.\n    group_start_end_indices = []\n    prev_end = None\n    for start, end in group_indices:\n        if prev_end and start > prev_end or not prev_end:\n            group_start_end_indices.append((start, end))\n        prev_end = end\n\n    if group_start_end_indices:\n        # Replace unnamed groups with <var>. Handle the fact that replacing the\n        # string between indices will change string length and thus indices\n        # will point to the wrong substring if not corrected.\n        final_pattern, prev_end = [], None\n        for start, end in group_start_end_indices:\n            if prev_end:\n                final_pattern.append(pattern[prev_end:start])\n            final_pattern.append(pattern[:start] + '<var>')\n            prev_end = end\n        final_pattern.append(pattern[prev_end:])\n        return ''.join(final_pattern)\n    else:\n        return pattern\n====\nimport unittest\n\nfrom django.contrib.admindocs.utils import (\n    docutils_is_available, parse_docstring, parse_rst, trim_docstring,\n)\n\nfrom .tests import AdminDocsSimpleTestCase\n\n\n@unittest.skipUnless(docutils_is_available, \"no docutils installed.\")\nclass TestUtils(AdminDocsSimpleTestCase):\n    \"\"\"\n    This __doc__ output is required for testing. I copied this example from\n    `admindocs` documentation. (TITLE)\n\n    Display an individual :model:`myapp.MyModel`.\n\n    **Context**\n\n    ``RequestContext``\n\n    ``mymodel``\n        An instance of :model:`myapp.MyModel`.\n\n    **Template:**\n\n    :template:`myapp/my_template.html` (DESCRIPTION)\n\n    some_metadata: some data\n    \"\"\"\n    def setUp(self):\n        self.docstring = self.__doc__\n\n    def test_trim_docstring(self):\n        trim_docstring_output = trim_docstring(self.docstring)\n        trimmed_docstring = (\n            'This __doc__ output is required for testing. I copied this '\n            'example from\\n`admindocs` documentation. (TITLE)\\n\\n'\n            'Display an individual :model:`myapp.MyModel`.\\n\\n'\n            '**Context**\\n\\n``RequestContext``\\n\\n``mymodel``\\n'\n            '    An instance of :model:`myapp.MyModel`.\\n\\n'\n            '**Template:**\\n\\n:template:`myapp/my_template.html` '\n            '(DESCRIPTION)\\n\\nsome_metadata: some data'\n        )\n        self.assertEqual(trim_docstring_output, trimmed_docstring)\n\n    def test_parse_docstring(self):\n        title, description, metadata = parse_docstring(self.docstring)\n        docstring_title = (\n            'This __doc__ output is required for testing. I copied this example from\\n'\n            '`admindocs` documentation. (TITLE)'\n        )\n        docstring_description = (\n            'Display an individual :model:`myapp.MyModel`.\\n\\n'\n            '**Context**\\n\\n``RequestContext``\\n\\n``mymodel``\\n'\n            '    An instance of :model:`myapp.MyModel`.\\n\\n'\n            '**Template:**\\n\\n:template:`myapp/my_template.html` '\n            '(DESCRIPTION)'\n        )\n        self.assertEqual(title, docstring_title)\n        self.assertEqual(description, docstring_description)\n        self.assertEqual(metadata, {'some_metadata': 'some data'})\n\n    def test_title_output(self):\n        title, description, metadata = parse_docstring(self.docstring)\n        title_output = parse_rst(title, 'model', 'model:admindocs')\n        self.assertIn('TITLE', title_output)\n        title_rendered = (\n            '<p>This __doc__ output is required for testing. I copied this '\n            'example from\\n<a class=\"reference external\" '\n            'href=\"/admindocs/models/admindocs/\">admindocs</a> documentation. '\n            '(TITLE)</p>\\n'\n        )\n        self.assertHTMLEqual(title_output, title_rendered)\n\n    def test_description_output(self):\n        title, description, metadata = parse_docstring(self.docstring)\n        description_output = parse_rst(description, 'model', 'model:admindocs')\n        description_rendered = (\n            '<p>Display an individual <a class=\"reference external\" '\n            'href=\"/admindocs/models/myapp.mymodel/\">myapp.MyModel</a>.</p>\\n'\n            '<p><strong>Context</strong></p>\\n<p><tt class=\"docutils literal\">'\n            'RequestContext</tt></p>\\n<dl class=\"docutils\">\\n<dt><tt class=\"'\n            'docutils literal\">mymodel</tt></dt>\\n<dd>An instance of <a class=\"'\n            'reference external\" href=\"/admindocs/models/myapp.mymodel/\">'\n            'myapp.MyModel</a>.</dd>\\n</dl>\\n<p><strong>Template:</strong></p>'\n            '\\n<p><a class=\"reference external\" href=\"/admindocs/templates/'\n            'myapp/my_template.html/\">myapp/my_template.html</a> (DESCRIPTION)'\n            '</p>\\n'\n        )\n        self.assertHTMLEqual(description_output, description_rendered)\n\n    def test_initial_header_level(self):\n        header = 'should be h3...\\n\\nHeader\\n------\\n'\n        output = parse_rst(header, 'header')\n        self.assertIn('<h3>Header</h3>', output)\n\n    def test_parse_rst(self):\n        \"\"\"\n        parse_rst() should use `cmsreference` as the default role.\n        \"\"\"\n        markup = '<p><a class=\"reference external\" href=\"/admindocs/%s\">title</a></p>\\n'\n        self.assertEqual(parse_rst('`title`', 'model'), markup % 'models/title/')\n        self.assertEqual(parse_rst('`title`', 'view'), markup % 'views/title/')\n        self.assertEqual(parse_rst('`title`', 'template'), markup % 'templates/title/')\n        self.assertEqual(parse_rst('`title`', 'filter'), markup % 'filters/#title')\n        self.assertEqual(parse_rst('`title`', 'tag'), markup % 'tags/#title')\n\n    def test_publish_parts(self):\n        \"\"\"\n        Django shouldn't break the default role for interpreted text\n        when ``publish_parts`` is used directly, by setting it to\n        ``cmsreference`` (#6681).\n        \"\"\"\n        import docutils\n        self.assertNotEqual(docutils.parsers.rst.roles.DEFAULT_INTERPRETED_ROLE, 'cmsreference')\n        source = 'reST, `interpreted text`, default role.'\n        markup = '<p>reST, <cite>interpreted text</cite>, default role.</p>\\n'\n        parts = docutils.core.publish_parts(source=source, writer_name=\"html4css1\")\n        self.assertEqual(parts['fragment'], markup)\n\n\n@unittest.skipUnless(docutils_is_available, \"no docutils installed.\")\nclass TestTrimDocstring(AdminDocsSimpleTestCase):\n    def test_first_line_not_empty(self):\n        \"\"\"Docstrings whose text starts on the first line are trimmed.\"\"\"\n        docstring = (\n            \"test tests something.\\n\"\n            \"\\n\"\n            \"    Indented body line.\\n\"\n            \"    Another indented line.\\n\"\n            \"    \"\n        )\n        self.assertEqual(\n            trim_docstring(docstring),\n            \"test tests something.\\n\\n    Indented body line.\\n    Another indented line.\",\n        )\n\n    def test_first_line_not_empty_single_line(self):\n        self.assertEqual(trim_docstring(\"test tests something.\\n    \"), \"test tests something.\")\n\n    def test_first_line_not_empty_parse_docstring(self):\n        docstring = (\n            \"test tests something.\\n\"\n            \"\\n\"\n            \"    Body text.\\n\"\n            \"\\n\"\n            \"    some_metadata: some data\\n\"\n            \"    \"\n        )\n        title, description, metadata = parse_docstring(docstring)\n        self.assertEqual(title, \"test tests something.\")\n        self.assertEqual(description, \"Body text.\")\n        self.assertEqual(metadata, {\"some_metadata\": \"some data\"})\n\n    def test_first_line_not_empty_parse_rst(self):\n        docstring = (\n            \"test tests something.\\n\"\n            \"\\n\"\n            \"    Body with `interpreted text`.\\n\"\n            \"    \"\n        )\n        title, description, metadata = parse_docstring(docstring)\n        self.assertEqual(title, \"test tests something.\")\n        output = parse_rst(description, \"view\", \"view:admindocs\")\n        self.assertIn(\"Body with\", output)\n        self.assertNotIn(\"default-role\", output)\n</output>",
+      "extra": {
+        "raw_output": "\"Misc. utility functions/classes for admin documentation generator.\"\n\nimport re\nfrom email.errors import HeaderParseError\nfrom email.parser import HeaderParser\n\nfrom django.urls import reverse\nfrom django.utils.regex_helper import _lazy_re_compile\nfrom django.utils.safestring import mark_safe\n\ntry:\n    import docutils.core\n    import docutils.nodes\n    import docutils.parsers.rst.roles\nexcept ImportError:\n    docutils_is_available = False\nelse:\n    docutils_is_available = True\n\n\ndef get_view_name(view_func):\n    mod_name = view_func.__module__\n    view_name = getattr(view_func, '__qualname__', view_func.__class__.__name__)\n    return mod_name + '.' + view_name\n\n\ndef trim_docstring(docstring):\n    \"\"\"\n    Uniformly trim leading/trailing whitespace from docstrings.\n\n    Based on https://www.python.org/dev/peps/pep-0257/#handling-docstring-indentation\n    \"\"\"\n    if not docstring or not docstring.strip():\n        return ''\n    # Convert tabs to spaces and split into lines\n    lines = docstring.expandtabs().splitlines()\n    indent = min(len(line) - len(line.lstrip()) for line in lines if line.lstrip())\n    trimmed = [lines[0].lstrip()] + [line[indent:].rstrip() for line in lines[1:]]\n    return \"\\n\".join(trimmed).strip()\n\n\ndef parse_docstring(docstring):\n    \"\"\"\n    Parse out the parts of a docstring.  Return (title, body, metadata).\n    \"\"\"\n    docstring = trim_docstring(docstring)\n    parts = re.split(r'\\n{2,}', docstring)\n    title = parts[0]\n    if len(parts) == 1:\n        body = ''\n        metadata = {}\n    else:\n        parser = HeaderParser()\n        try:\n            metadata = parser.parsestr(parts[-1])\n        except HeaderParseError:\n            metadata = {}\n            body = \"\\n\\n\".join(parts[1:])\n        else:\n            metadata = dict(metadata.items())\n            if metadata:\n                body = \"\\n\\n\".join(parts[1:-1])\n            else:\n                body = \"\\n\\n\".join(parts[1:])\n    return title, body, metadata\n\n\ndef parse_rst(text, default_reference_context, thing_being_parsed=None):\n    \"\"\"\n    Convert the string from reST to an XHTML fragment.\n    \"\"\"\n    overrides = {\n        'doctitle_xform': True,\n        'initial_header_level': 3,\n        \"default_reference_context\": default_reference_context,\n        \"link_base\": reverse('django-admindocs-docroot').rstrip('/'),\n        'raw_enabled': False,\n        'file_insertion_enabled': False,\n    }\n    thing_being_parsed = thing_being_parsed and '<%s>' % thing_being_parsed\n    # Wrap ``text`` in some reST that sets the default role to ``cmsreference``,\n    # then restores it.\n    source = \"\"\"\n.. default-role:: cmsreference\n\n%s\n\n.. default-role::\n\"\"\"\n    parts = docutils.core.publish_parts(\n        source % text,\n        source_path=thing_being_parsed, destination_path=None,\n        writer_name='html', settings_overrides=overrides,\n    )\n    return mark_safe(parts['fragment'])\n\n\n#\n# reST roles\n#\nROLES = {\n    'model': '%s/models/%s/',\n    'view': '%s/views/%s/',\n    'template': '%s/templates/%s/',\n    'filter': '%s/filters/#%s',\n    'tag': '%s/tags/#%s',\n}\n\n\ndef create_reference_role(rolename, urlbase):\n    def _role(name, rawtext, text, lineno, inliner, options=None, content=None):\n        if options is None:\n            options = {}\n        node = docutils.nodes.reference(\n            rawtext,\n            text,\n            refuri=(urlbase % (\n                inliner.document.settings.link_base,\n                text.lower(),\n            )),\n            **options\n        )\n        return [node], []\n    docutils.parsers.rst.roles.register_canonical_role(rolename, _role)\n\n\ndef default_reference_role(name, rawtext, text, lineno, inliner, options=None, content=None):\n    if options is None:\n        options = {}\n    context = inliner.document.settings.default_reference_context\n    node = docutils.nodes.reference(\n        rawtext,\n        text,\n        refuri=(ROLES[context] % (\n            inliner.document.settings.link_base,\n            text.lower(),\n        )),\n        **options\n    )\n    return [node], []\n\n\nif docutils_is_available:\n    docutils.parsers.rst.roles.register_canonical_role('cmsreference', default_reference_role)\n\n    for name, urlbase in ROLES.items():\n        create_reference_role(name, urlbase)\n\n# Match the beginning of a named or unnamed group.\nnamed_group_matcher = _lazy_re_compile(r'\\(\\?P(<\\w+>)')\nunnamed_group_matcher = _lazy_re_compile(r'\\(')\n\n\ndef replace_named_groups(pattern):\n    r\"\"\"\n    Find named groups in `pattern` and replace them with the group name. E.g.,\n    1. ^(?P<a>\\w+)/b/(\\w+)$ ==> ^<a>/b/(\\w+)$\n    2. ^(?P<a>\\w+)/b/(?P<c>\\w+)/$ ==> ^<a>/b/<c>/$\n    3. ^(?P<a>\\w+)/b/(\\w+) ==> ^<a>/b/(\\w+)\n    4. ^(?P<a>\\w+)/b/(?P<c>\\w+) ==> ^<a>/b/<c>\n    \"\"\"\n    named_group_indices = [\n        (m.start(0), m.end(0), m.group(1))\n        for m in named_group_matcher.finditer(pattern)\n    ]\n    # Tuples of (named capture group pattern, group name).\n    group_pattern_and_name = []\n    # Loop over the groups and their start and end indices.\n    for start, end, group_name in named_group_indices:\n        # Handle nested parentheses, e.g. '^(?P<a>(x|y))/b'.\n        unmatched_open_brackets, prev_char = 1, None\n        for idx, val in enumerate(pattern[end:]):\n            # Check for unescaped `(` and `)`. They mark the start and end of a\n            # nested group.\n            if val == '(' and prev_char != '\\\\':\n                unmatched_open_brackets += 1\n            elif val == ')' and prev_char != '\\\\':\n                unmatched_open_brackets -= 1\n            prev_char = val\n            # If brackets are balanced, the end of the string for the current\n            # named capture group pattern has been reached.\n            if unmatched_open_brackets == 0:\n                group_pattern_and_name.append((pattern[start:end + idx + 1], group_name))\n                break\n\n    # Replace the string for named capture groups with their group names.\n    for group_pattern, group_name in group_pattern_and_name:\n        pattern = pattern.replace(group_pattern, group_name)\n    return pattern\n\n\ndef replace_unnamed_groups(pattern):\n    r\"\"\"\n    Find unnamed groups in `pattern` and replace them with '<var>'. E.g.,\n    1. ^(?P<a>\\w+)/b/(\\w+)$ ==> ^(?P<a>\\w+)/b/<var>$\n    2. ^(?P<a>\\w+)/b/((x|y)\\w+)$ ==> ^(?P<a>\\w+)/b/<var>$\n    3. ^(?P<a>\\w+)/b/(\\w+) ==> ^(?P<a>\\w+)/b/<var>\n    4. ^(?P<a>\\w+)/b/((x|y)\\w+) ==> ^(?P<a>\\w+)/b/<var>\n    \"\"\"\n    unnamed_group_indices = [m.start(0) for m in unnamed_group_matcher.finditer(pattern)]\n    # Indices of the start of unnamed capture groups.\n    group_indices = []\n    # Loop over the start indices of the groups.\n    for start in unnamed_group_indices:\n        # Handle nested parentheses, e.g. '^b/((x|y)\\w+)$'.\n        unmatched_open_brackets, prev_char = 1, None\n        for idx, val in enumerate(pattern[start + 1:]):\n            # Check for unescaped `(` and `)`. They mark the start and end of\n            # a nested group.\n            if val == '(' and prev_char != '\\\\':\n                unmatched_open_brackets += 1\n            elif val == ')' and prev_char != '\\\\':\n                unmatched_open_brackets -= 1\n            prev_char = val\n\n            if unmatched_open_brackets == 0:\n                group_indices.append((start, start + 2 + idx))\n                break\n    # Remove unnamed group matches inside other unnamed capture groups.\n    group_start_end_indices = []\n    prev_end = None\n    for start, end in group_indices:\n        if prev_end and start > prev_end or not prev_end:\n            group_start_end_indices.append((start, end))\n        prev_end = end\n\n    if group_start_end_indices:\n        # Replace unnamed groups with <var>. Handle the fact that replacing the\n        # string between indices will change string length and thus indices\n        # will point to the wrong substring if not corrected.\n        final_pattern, prev_end = [], None\n        for start, end in group_start_end_indices:\n            if prev_end:\n                final_pattern.append(pattern[prev_end:start])\n            final_pattern.append(pattern[:start] + '<var>')\n            prev_end = end\n        final_pattern.append(pattern[prev_end:])\n        return ''.join(final_pattern)\n    else:\n        return pattern\n====\nimport unittest\n\nfrom django.contrib.admindocs.utils import (\n    docutils_is_available, parse_docstring, parse_rst, trim_docstring,\n)\n\nfrom .tests import AdminDocsSimpleTestCase\n\n\n@unittest.skipUnless(docutils_is_available, \"no docutils installed.\")\nclass TestUtils(AdminDocsSimpleTestCase):\n    \"\"\"\n    This __doc__ output is required for testing. I copied this example from\n    `admindocs` documentation. (TITLE)\n\n    Display an individual :model:`myapp.MyModel`.\n\n    **Context**\n\n    ``RequestContext``\n\n    ``mymodel``\n        An instance of :model:`myapp.MyModel`.\n\n    **Template:**\n\n    :template:`myapp/my_template.html` (DESCRIPTION)\n\n    some_metadata: some data\n    \"\"\"\n    def setUp(self):\n        self.docstring = self.__doc__\n\n    def test_trim_docstring(self):\n        trim_docstring_output = trim_docstring(self.docstring)\n        trimmed_docstring = (\n            'This __doc__ output is required for testing. I copied this '\n            'example from\\n`admindocs` documentation. (TITLE)\\n\\n'\n            'Display an individual :model:`myapp.MyModel`.\\n\\n'\n            '**Context**\\n\\n``RequestContext``\\n\\n``mymodel``\\n'\n            '    An instance of :model:`myapp.MyModel`.\\n\\n'\n            '**Template:**\\n\\n:template:`myapp/my_template.html` '\n            '(DESCRIPTION)\\n\\nsome_metadata: some data'\n        )\n        self.assertEqual(trim_docstring_output, trimmed_docstring)\n\n    def test_parse_docstring(self):\n        title, description, metadata = parse_docstring(self.docstring)\n        docstring_title = (\n            'This __doc__ output is required for testing. I copied this example from\\n'\n            '`admindocs` documentation. (TITLE)'\n        )\n        docstring_description = (\n            'Display an individual :model:`myapp.MyModel`.\\n\\n'\n            '**Context**\\n\\n``RequestContext``\\n\\n``mymodel``\\n'\n            '    An instance of :model:`myapp.MyModel`.\\n\\n'\n            '**Template:**\\n\\n:template:`myapp/my_template.html` '\n            '(DESCRIPTION)'\n        )\n        self.assertEqual(title, docstring_title)\n        self.assertEqual(description, docstring_description)\n        self.assertEqual(metadata, {'some_metadata': 'some data'})\n\n    def test_title_output(self):\n        title, description, metadata = parse_docstring(self.docstring)\n        title_output = parse_rst(title, 'model', 'model:admindocs')\n        self.assertIn('TITLE', title_output)\n        title_rendered = (\n            '<p>This __doc__ output is required for testing. I copied this '\n            'example from\\n<a class=\"reference external\" '\n            'href=\"/admindocs/models/admindocs/\">admindocs</a> documentation. '\n            '(TITLE)</p>\\n'\n        )\n        self.assertHTMLEqual(title_output, title_rendered)\n\n    def test_description_output(self):\n        title, description, metadata = parse_docstring(self.docstring)\n        description_output = parse_rst(description, 'model', 'model:admindocs')\n        description_rendered = (\n            '<p>Display an individual <a class=\"reference external\" '\n            'href=\"/admindocs/models/myapp.mymodel/\">myapp.MyModel</a>.</p>\\n'\n            '<p><strong>Context</strong></p>\\n<p><tt class=\"docutils literal\">'\n            'RequestContext</tt></p>\\n<dl class=\"docutils\">\\n<dt><tt class=\"'\n            'docutils literal\">mymodel</tt></dt>\\n<dd>An instance of <a class=\"'\n            'reference external\" href=\"/admindocs/models/myapp.mymodel/\">'\n            'myapp.MyModel</a>.</dd>\\n</dl>\\n<p><strong>Template:</strong></p>'\n            '\\n<p><a class=\"reference external\" href=\"/admindocs/templates/'\n            'myapp/my_template.html/\">myapp/my_template.html</a> (DESCRIPTION)'\n            '</p>\\n'\n        )\n        self.assertHTMLEqual(description_output, description_rendered)\n\n    def test_initial_header_level(self):\n        header = 'should be h3...\\n\\nHeader\\n------\\n'\n        output = parse_rst(header, 'header')\n        self.assertIn('<h3>Header</h3>', output)\n\n    def test_parse_rst(self):\n        \"\"\"\n        parse_rst() should use `cmsreference` as the default role.\n        \"\"\"\n        markup = '<p><a class=\"reference external\" href=\"/admindocs/%s\">title</a></p>\\n'\n        self.assertEqual(parse_rst('`title`', 'model'), markup % 'models/title/')\n        self.assertEqual(parse_rst('`title`', 'view'), markup % 'views/title/')\n        self.assertEqual(parse_rst('`title`', 'template'), markup % 'templates/title/')\n        self.assertEqual(parse_rst('`title`', 'filter'), markup % 'filters/#title')\n        self.assertEqual(parse_rst('`title`', 'tag'), markup % 'tags/#title')\n\n    def test_publish_parts(self):\n        \"\"\"\n        Django shouldn't break the default role for interpreted text\n        when ``publish_parts`` is used directly, by setting it to\n        ``cmsreference`` (#6681).\n        \"\"\"\n        import docutils\n        self.assertNotEqual(docutils.parsers.rst.roles.DEFAULT_INTERPRETED_ROLE, 'cmsreference')\n        source = 'reST, `interpreted text`, default role.'\n        markup = '<p>reST, <cite>interpreted text</cite>, default role.</p>\\n'\n        parts = docutils.core.publish_parts(source=source, writer_name=\"html4css1\")\n        self.assertEqual(parts['fragment'], markup)\n\n\n@unittest.skipUnless(docutils_is_available, \"no docutils installed.\")\nclass TestTrimDocstring(AdminDocsSimpleTestCase):\n    def test_first_line_not_empty(self):\n        \"\"\"Docstrings whose text starts on the first line are trimmed.\"\"\"\n        docstring = (\n            \"test tests something.\\n\"\n            \"\\n\"\n            \"    Indented body line.\\n\"\n            \"    Another indented line.\\n\"\n            \"    \"\n        )\n        self.assertEqual(\n            trim_docstring(docstring),\n            \"test tests something.\\n\\n    Indented body line.\\n    Another indented line.\",\n        )\n\n    def test_first_line_not_empty_single_line(self):\n        self.assertEqual(trim_docstring(\"test tests something.\\n    \"), \"test tests something.\")\n\n    def test_first_line_not_empty_parse_docstring(self):\n        docstring = (\n            \"test tests something.\\n\"\n            \"\\n\"\n            \"    Body text.\\n\"\n            \"\\n\"\n            \"    some_metadata: some data\\n\"\n            \"    \"\n        )\n        title, description, metadata = parse_docstring(docstring)\n        self.assertEqual(title, \"test tests something.\")\n        self.assertEqual(description, \"Body text.\")\n        self.assertEqual(metadata, {\"some_metadata\": \"some data\"})\n\n    def test_first_line_not_empty_parse_rst(self):\n        docstring = (\n            \"test tests something.\\n\"\n            \"\\n\"\n            \"    Body with `interpreted text`.\\n\"\n            \"    \"\n        )\n        title, description, metadata = parse_docstring(docstring)\n        self.assertEqual(title, \"test tests something.\")\n        output = parse_rst(description, \"view\", \"view:admindocs\")\n        self.assertIn(\"Body with\", output)\n        self.assertNotIn(\"default-role\", output)\n",
+        "returncode": 0,
+        "timestamp": 1794814586.539232,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_iF9JPiTczMgUveP3FWmE1569",
+      "role": "tool"
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n7ffe521 Buggy starting snapshot\nOn branch master\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   tests/admin_docs/test_utils.py\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n</output>",
+      "extra": {
+        "raw_output": "7ffe521 Buggy starting snapshot\nOn branch master\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   tests/admin_docs/test_utils.py\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n",
+        "returncode": 0,
+        "timestamp": 1794814586.540576,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_01_uurceWMh7jZKB8n8UyNF6088",
+      "role": "tool"
+    },
+    {
+      "content": "Now let me run the candidate tests on the buggy code.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; python -m pytest tests/admin_docs/test_utils.py -v 2>&1 | tail -40; echo \\\"EXIT: ${PIPESTATUS[0]}\\\"\"}",
+            "name": "bash"
+          },
+          "id": "call_00_ZEPo4vHVffExmdfxkxsP9505",
+          "type": "function"
+        },
+        {
+          "index": 1,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; python -c \\\"\\nfrom django.contrib.admindocs.utils import trim_docstring, parse_docstring, parse_rst\\nd='test tests something.\\\\n\\\\n    Indented body line.\\\\n    Another indented line.\\\\n    '\\nprint(repr(trim_docstring(d)))\\nprint(repr(trim_docstring('test tests something.\\\\n    ')))\\nt,desc,m=parse_docstring('test tests something.\\\\n\\\\n    Body text.\\\\n\\\\n    some_metadata: some data\\\\n    ')\\nprint(repr(t),repr(desc),m)\\n\\\"\"}",
+            "name": "bash"
+          },
+          "id": "call_01_zybOBEDPeQIt4tUpbVi53978",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed; python -m pytest tests/admin_docs/test_utils.py -v 2>&1 | tail -40; echo \"EXIT: ${PIPESTATUS[0]}\"",
+            "tool_call_id": "call_00_ZEPo4vHVffExmdfxkxsP9505"
+          },
+          {
+            "command": "cd /testbed; python -c \"\nfrom django.contrib.admindocs.utils import trim_docstring, parse_docstring, parse_rst\nd='test tests something.\\n\\n    Indented body line.\\n    Another indented line.\\n    '\nprint(repr(trim_docstring(d)))\nprint(repr(trim_docstring('test tests something.\\n    ')))\nt,desc,m=parse_docstring('test tests something.\\n\\n    Body text.\\n\\n    some_metadata: some data\\n    ')\nprint(repr(t),repr(desc),m)\n\"",
+            "tool_call_id": "call_01_zybOBEDPeQIt4tUpbVi53978"
+          }
+        ],
+        "response": {
+          "id": "c8e5d256-dda5-4068-a016-308e90ed8404",
+          "created": 1794814586,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "Now let me run the candidate tests on the buggy code.",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; python -m pytest tests/admin_docs/test_utils.py -v 2>&1 | tail -40; echo \\\"EXIT: ${PIPESTATUS[0]}\\\"\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_ZEPo4vHVffExmdfxkxsP9505",
+                    "type": "function"
+                  },
+                  {
+                    "index": 1,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; python -c \\\"\\nfrom django.contrib.admindocs.utils import trim_docstring, parse_docstring, parse_rst\\nd='test tests something.\\\\n\\\\n    Indented body line.\\\\n    Another indented line.\\\\n    '\\nprint(repr(trim_docstring(d)))\\nprint(repr(trim_docstring('test tests something.\\\\n    ')))\\nt,desc,m=parse_docstring('test tests something.\\\\n\\\\n    Body text.\\\\n\\\\n    some_metadata: some data\\\\n    ')\\nprint(repr(t),repr(desc),m)\\n\\\"\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_01_zybOBEDPeQIt4tUpbVi53978",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 241,
+            "prompt_tokens": 6687,
+            "total_tokens": 6928,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 2560
+            },
+            "prompt_cache_hit_tokens": 2560,
+            "prompt_cache_miss_tokens": 4127
+          }
+        },
+        "cost": 0.0022952999999999997,
+        "timestamp": 1794814588.422442
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n/opt/miniconda3/envs/testbed/bin/python: No module named pytest\nEXIT: 1\n</output>",
+      "extra": {
+        "raw_output": "/opt/miniconda3/envs/testbed/bin/python: No module named pytest\nEXIT: 1\n",
+        "returncode": 0,
+        "timestamp": 1794814589.232613,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_ZEPo4vHVffExmdfxkxsP9505",
+      "role": "tool"
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n'test tests something.\\n\\n    Indented body line.\\n    Another indented line.'\n'test tests something.'\n'test tests something.' '    Body text.\\n\\n    some_metadata: some data' {}\n</output>",
+      "extra": {
+        "raw_output": "'test tests something.\\n\\n    Indented body line.\\n    Another indented line.'\n'test tests something.'\n'test tests something.' '    Body text.\\n\\n    some_metadata: some data' {}\n",
+        "returncode": 0,
+        "timestamp": 1794814589.233484,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_01_zybOBEDPeQIt4tUpbVi53978",
+      "role": "tool"
+    },
+    {
+      "content": "Interesting \u2014 the first two trim tests pass on buggy code. Let me run the actual test suite via Django's runner.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed/tests; python runtests.py admin_docs.test_utils -v 2 2>&1 | tail -40; echo \\\"EXIT: ${PIPESTATUS[0]}\\\"\"}",
+            "name": "bash"
+          },
+          "id": "call_00_1a1oQAnOZNZ61rmnbUqO1207",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed/tests; python runtests.py admin_docs.test_utils -v 2 2>&1 | tail -40; echo \"EXIT: ${PIPESTATUS[0]}\"",
+            "tool_call_id": "call_00_1a1oQAnOZNZ61rmnbUqO1207"
+          }
+        ],
+        "response": {
+          "id": "654e0f04-7103-42ab-bc23-68dc6aa12952",
+          "created": 1794814589,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "Interesting \u2014 the first two trim tests pass on buggy code. Let me run the actual test suite via Django's runner.",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed/tests; python runtests.py admin_docs.test_utils -v 2 2>&1 | tail -40; echo \\\"EXIT: ${PIPESTATUS[0]}\\\"\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_1a1oQAnOZNZ61rmnbUqO1207",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 103,
+            "prompt_tokens": 7044,
+            "total_tokens": 7147,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 6784
+            },
+            "prompt_cache_hit_tokens": 6784,
+            "prompt_cache_miss_tokens": 260
+          }
+        },
+        "cost": 0.0022367999999999997,
+        "timestamp": 1794814590.517548
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 59, in testPartExecutor\n    yield\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 605, in run\n    testMethod()\n  File \"/testbed/tests/admin_docs/test_utils.py\", line 153, in test_first_line_not_empty_parse_docstring\n    self.assertEqual(description, \"Body text.\")\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 829, in assertEqual\n    assertion_func(first, second, msg=msg)\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 1203, in assertMultiLineEqual\n    self.fail(self._formatMessage(msg, standardMsg))\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 670, in fail\n    raise self.failureException(msg)\nAssertionError: '    Body text.\\n\\n    some_metadata: some data' != 'Body text.'\n-     Body text.\n? ----          -\n+ Body text.- \n-     some_metadata: some data\n\n======================================================================\nFAIL: test_first_line_not_empty_parse_rst (admin_docs.test_utils.TestTrimDocstring)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 59, in testPartExecutor\n    yield\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 605, in run\n    testMethod()\n  File \"/testbed/tests/admin_docs/test_utils.py\", line 167, in test_first_line_not_empty_parse_rst\n    self.assertNotIn(\"default-role\", output)\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 1096, in assertNotIn\n    self.fail(self._formatMessage(msg, standardMsg))\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 670, in fail\n    raise self.failureException(msg)\nAssertionError: 'default-role' unexpectedly found in '<div class=\"system-message\">\\n<p class=\"system-message-title\">System Message: ERROR/3 (<tt class=\"docutils\">&lt;view:admindocs&gt;</tt>, line 2)</p>\\n<p>Error in &quot;default-role&quot; directive:\\nno content permitted.</p>\\n<pre class=\"literal-block\">\\n.. default-role:: cmsreference\\n\\n    Body with `interpreted text`.\\n\\n</pre>\\n</div>\\n'\n\n----------------------------------------------------------------------\nRan 11 tests in 0.129s\n\nFAILED (failures=2)\nEXIT: 1\n</output>",
+      "extra": {
+        "raw_output": "----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 59, in testPartExecutor\n    yield\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 605, in run\n    testMethod()\n  File \"/testbed/tests/admin_docs/test_utils.py\", line 153, in test_first_line_not_empty_parse_docstring\n    self.assertEqual(description, \"Body text.\")\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 829, in assertEqual\n    assertion_func(first, second, msg=msg)\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 1203, in assertMultiLineEqual\n    self.fail(self._formatMessage(msg, standardMsg))\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 670, in fail\n    raise self.failureException(msg)\nAssertionError: '    Body text.\\n\\n    some_metadata: some data' != 'Body text.'\n-     Body text.\n? ----          -\n+ Body text.- \n-     some_metadata: some data\n\n======================================================================\nFAIL: test_first_line_not_empty_parse_rst (admin_docs.test_utils.TestTrimDocstring)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 59, in testPartExecutor\n    yield\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 605, in run\n    testMethod()\n  File \"/testbed/tests/admin_docs/test_utils.py\", line 167, in test_first_line_not_empty_parse_rst\n    self.assertNotIn(\"default-role\", output)\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 1096, in assertNotIn\n    self.fail(self._formatMessage(msg, standardMsg))\n  File \"/opt/miniconda3/envs/testbed/lib/python3.6/unittest/case.py\", line 670, in fail\n    raise self.failureException(msg)\nAssertionError: 'default-role' unexpectedly found in '<div class=\"system-message\">\\n<p class=\"system-message-title\">System Message: ERROR/3 (<tt class=\"docutils\">&lt;view:admindocs&gt;</tt>, line 2)</p>\\n<p>Error in &quot;default-role&quot; directive:\\nno content permitted.</p>\\n<pre class=\"literal-block\">\\n.. default-role:: cmsreference\\n\\n    Body with `interpreted text`.\\n\\n</pre>\\n</div>\\n'\n\n----------------------------------------------------------------------\nRan 11 tests in 0.129s\n\nFAILED (failures=2)\nEXIT: 1\n",
+        "returncode": 0,
+        "timestamp": 1794814591.506304,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_1a1oQAnOZNZ61rmnbUqO1207",
+      "role": "tool"
+    },
+    {
+      "content": "Two tests fail on buggy code. Let me verify the expected values are correct by simulating the proposed fix (without modifying production code).",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; python -c \\\"\\nimport re\\nfrom email.parser import HeaderParser\\nfrom email.errors import HeaderParseError\\n\\ndef trim_fixed(docstring):\\n    if not docstring or not docstring.strip():\\n        return ''\\n    lines = docstring.expandtabs().splitlines()\\n    indent = min(len(line) - len(line.lstrip()) for line in lines[1:] if line.lstrip())\\n    trimmed = [lines[0].lstrip()] + [line[indent:].rstrip() for line in lines[1:]]\\n    return '\\\\n'.join(trimmed).strip()\\n\\ndef parse_fixed(docstring):\\n    docstring = trim_fixed(docstring)\\n    parts = re.split(r'\\\\n{2,}', docstring)\\n    title = parts[0]\\n    if len(parts)==1: return title,'',{}\\n    parser=HeaderParser()\\n    try: metadata=parser.parsestr(parts[-1])\\n    except HeaderParseError:\\n        metadata={}; body='\\\\n\\\\n'.join(parts[1:])\\n    else:\\n        metadata=dict(metadata.items())\\n        body='\\\\n\\\\n'.join(parts[1:-1]) if metadata else '\\\\n\\\\n'.join(parts[1:])\\n    return title,body,metadata\\n\\nd='test tests something.\\\\n\\\\n    Indented body line.\\\\n    Another indented line.\\\\n    '\\nprint(repr(trim_fixed(d)))\\nprint(repr(trim_fixed('test tests something.\\\\n    ')))\\nprint(parse_fixed('test tests something.\\\\n\\\\n    Body text.\\\\n\\\\n    some_metadata: some data\\\\n    '))\\nprint(parse_fixed('test tests something.\\\\n\\\\n    Body with \\\\`interpreted text\\\\`.\\\\n    '))\\n\\\"\"}",
+            "name": "bash"
+          },
+          "id": "call_00_XKJnZXbkgljd4e7iaWDx6247",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed; python -c \"\nimport re\nfrom email.parser import HeaderParser\nfrom email.errors import HeaderParseError\n\ndef trim_fixed(docstring):\n    if not docstring or not docstring.strip():\n        return ''\n    lines = docstring.expandtabs().splitlines()\n    indent = min(len(line) - len(line.lstrip()) for line in lines[1:] if line.lstrip())\n    trimmed = [lines[0].lstrip()] + [line[indent:].rstrip() for line in lines[1:]]\n    return '\\n'.join(trimmed).strip()\n\ndef parse_fixed(docstring):\n    docstring = trim_fixed(docstring)\n    parts = re.split(r'\\n{2,}', docstring)\n    title = parts[0]\n    if len(parts)==1: return title,'',{}\n    parser=HeaderParser()\n    try: metadata=parser.parsestr(parts[-1])\n    except HeaderParseError:\n        metadata={}; body='\\n\\n'.join(parts[1:])\n    else:\n        metadata=dict(metadata.items())\n        body='\\n\\n'.join(parts[1:-1]) if metadata else '\\n\\n'.join(parts[1:])\n    return title,body,metadata\n\nd='test tests something.\\n\\n    Indented body line.\\n    Another indented line.\\n    '\nprint(repr(trim_fixed(d)))\nprint(repr(trim_fixed('test tests something.\\n    ')))\nprint(parse_fixed('test tests something.\\n\\n    Body text.\\n\\n    some_metadata: some data\\n    '))\nprint(parse_fixed('test tests something.\\n\\n    Body with \\`interpreted text\\`.\\n    '))\n\"",
+            "tool_call_id": "call_00_XKJnZXbkgljd4e7iaWDx6247"
+          }
+        ],
+        "response": {
+          "id": "77f65c55-0d0d-4253-9cdd-200360c20d45",
+          "created": 1794814591,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "Two tests fail on buggy code. Let me verify the expected values are correct by simulating the proposed fix (without modifying production code).",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; python -c \\\"\\nimport re\\nfrom email.parser import HeaderParser\\nfrom email.errors import HeaderParseError\\n\\ndef trim_fixed(docstring):\\n    if not docstring or not docstring.strip():\\n        return ''\\n    lines = docstring.expandtabs().splitlines()\\n    indent = min(len(line) - len(line.lstrip()) for line in lines[1:] if line.lstrip())\\n    trimmed = [lines[0].lstrip()] + [line[indent:].rstrip() for line in lines[1:]]\\n    return '\\\\n'.join(trimmed).strip()\\n\\ndef parse_fixed(docstring):\\n    docstring = trim_fixed(docstring)\\n    parts = re.split(r'\\\\n{2,}', docstring)\\n    title = parts[0]\\n    if len(parts)==1: return title,'',{}\\n    parser=HeaderParser()\\n    try: metadata=parser.parsestr(parts[-1])\\n    except HeaderParseError:\\n        metadata={}; body='\\\\n\\\\n'.join(parts[1:])\\n    else:\\n        metadata=dict(metadata.items())\\n        body='\\\\n\\\\n'.join(parts[1:-1]) if metadata else '\\\\n\\\\n'.join(parts[1:])\\n    return title,body,metadata\\n\\nd='test tests something.\\\\n\\\\n    Indented body line.\\\\n    Another indented line.\\\\n    '\\nprint(repr(trim_fixed(d)))\\nprint(repr(trim_fixed('test tests something.\\\\n    ')))\\nprint(parse_fixed('test tests something.\\\\n\\\\n    Body text.\\\\n\\\\n    some_metadata: some data\\\\n    '))\\nprint(parse_fixed('test tests something.\\\\n\\\\n    Body with \\\\`interpreted text\\\\`.\\\\n    '))\\n\\\"\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_XKJnZXbkgljd4e7iaWDx6247",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 443,
+            "prompt_tokens": 7845,
+            "total_tokens": 8288,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 7040
+            },
+            "prompt_cache_hit_tokens": 7040,
+            "prompt_cache_miss_tokens": 805
+          }
+        },
+        "cost": 0.0028851,
+        "timestamp": 1794814593.894136
+      }
+    },
+    {
+      "content": "<returncode>1</returncode>\n<output>\n'test tests something.\\n\\nIndented body line.\\nAnother indented line.'\nTraceback (most recent call last):\n  File \"<string>\", line 30, in <module>\n  File \"<string>\", line 10, in trim_fixed\nValueError: min() arg is an empty sequence\n</output>",
+      "extra": {
+        "raw_output": "'test tests something.\\n\\nIndented body line.\\nAnother indented line.'\nTraceback (most recent call last):\n  File \"<string>\", line 30, in <module>\n  File \"<string>\", line 10, in trim_fixed\nValueError: min() arg is an empty sequence\n",
+        "returncode": 1,
+        "timestamp": 1794814594.124087,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_XKJnZXbkgljd4e7iaWDx6247",
+      "role": "tool"
+    },
+    {
+      "content": "Important finding: the proposed fix breaks the single-line case, and the candidate's expected values for the first test don't match the fix. Let me examine more carefully.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; python -c \\\"\\nimport re\\nfrom email.parser import HeaderParser\\nfrom email.errors import HeaderParseError\\n\\ndef trim_fixed(docstring):\\n    if not docstring or not docstring.strip():\\n        return ''\\n    lines = docstring.expandtabs().splitlines()\\n    indent = min(len(line) - len(line.lstrip()) for line in lines[1:] if line.lstrip())\\n    trimmed = [lines[0].lstrip()] + [line[indent:].rstrip() for line in lines[1:]]\\n    return '\\\\n'.join(trimmed).strip()\\n\\ndef parse_fixed(docstring):\\n    docstring = trim_fixed(docstring)\\n    parts = re.split(r'\\\\n{2,}', docstring)\\n    title = parts[0]\\n    if len(parts)==1: return title,'',{}\\n    parser=HeaderParser()\\n    try: metadata=parser.parsestr(parts[-1])\\n    except HeaderParseError:\\n        metadata={}; body='\\\\n\\\\n'.join(parts[1:])\\n    else:\\n        metadata=dict(metadata.items())\\n        body='\\\\n\\\\n'.join(parts[1:-1]) if metadata else '\\\\n\\\\n'.join(parts[1:])\\n    return title,body,metadata\\n\\nprint('parse_docstring:', parse_fixed('test tests something.\\\\n\\\\n    Body text.\\\\n\\\\n    some_metadata: some data\\\\n    '))\\nprint('parse_rst desc:', parse_fixed('test tests something.\\\\n\\\\n    Body with \\\\`interpreted text\\\\`.\\\\n    '))\\n\\\"\"}",
+            "name": "bash"
+          },
+          "id": "call_00_zJQHCFPkCkcW1QNdxrnu2077",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed; python -c \"\nimport re\nfrom email.parser import HeaderParser\nfrom email.errors import HeaderParseError\n\ndef trim_fixed(docstring):\n    if not docstring or not docstring.strip():\n        return ''\n    lines = docstring.expandtabs().splitlines()\n    indent = min(len(line) - len(line.lstrip()) for line in lines[1:] if line.lstrip())\n    trimmed = [lines[0].lstrip()] + [line[indent:].rstrip() for line in lines[1:]]\n    return '\\n'.join(trimmed).strip()\n\ndef parse_fixed(docstring):\n    docstring = trim_fixed(docstring)\n    parts = re.split(r'\\n{2,}', docstring)\n    title = parts[0]\n    if len(parts)==1: return title,'',{}\n    parser=HeaderParser()\n    try: metadata=parser.parsestr(parts[-1])\n    except HeaderParseError:\n        metadata={}; body='\\n\\n'.join(parts[1:])\n    else:\n        metadata=dict(metadata.items())\n        body='\\n\\n'.join(parts[1:-1]) if metadata else '\\n\\n'.join(parts[1:])\n    return title,body,metadata\n\nprint('parse_docstring:', parse_fixed('test tests something.\\n\\n    Body text.\\n\\n    some_metadata: some data\\n    '))\nprint('parse_rst desc:', parse_fixed('test tests something.\\n\\n    Body with \\`interpreted text\\`.\\n    '))\n\"",
+            "tool_call_id": "call_00_zJQHCFPkCkcW1QNdxrnu2077"
+          }
+        ],
+        "response": {
+          "id": "18b848f5-220e-4aba-8543-55f8e846d41b",
+          "created": 1794814594,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "Important finding: the proposed fix breaks the single-line case, and the candidate's expected values for the first test don't match the fix. Let me examine more carefully.",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; python -c \\\"\\nimport re\\nfrom email.parser import HeaderParser\\nfrom email.errors import HeaderParseError\\n\\ndef trim_fixed(docstring):\\n    if not docstring or not docstring.strip():\\n        return ''\\n    lines = docstring.expandtabs().splitlines()\\n    indent = min(len(line) - len(line.lstrip()) for line in lines[1:] if line.lstrip())\\n    trimmed = [lines[0].lstrip()] + [line[indent:].rstrip() for line in lines[1:]]\\n    return '\\\\n'.join(trimmed).strip()\\n\\ndef parse_fixed(docstring):\\n    docstring = trim_fixed(docstring)\\n    parts = re.split(r'\\\\n{2,}', docstring)\\n    title = parts[0]\\n    if len(parts)==1: return title,'',{}\\n    parser=HeaderParser()\\n    try: metadata=parser.parsestr(parts[-1])\\n    except HeaderParseError:\\n        metadata={}; body='\\\\n\\\\n'.join(parts[1:])\\n    else:\\n        metadata=dict(metadata.items())\\n        body='\\\\n\\\\n'.join(parts[1:-1]) if metadata else '\\\\n\\\\n'.join(parts[1:])\\n    return title,body,metadata\\n\\nprint('parse_docstring:', parse_fixed('test tests something.\\\\n\\\\n    Body text.\\\\n\\\\n    some_metadata: some data\\\\n    '))\\nprint('parse_rst desc:', parse_fixed('test tests something.\\\\n\\\\n    Body with \\\\`interpreted text\\\\`.\\\\n    '))\\n\\\"\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_zJQHCFPkCkcW1QNdxrnu2077",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 411,
+            "prompt_tokens": 8379,
+            "total_tokens": 8790,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 8192
+            },
+            "prompt_cache_hit_tokens": 8192,
+            "prompt_cache_miss_tokens": 187
+          }
+        },
+        "cost": 0.0030069,
+        "timestamp": 1794814596.3818722
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\nparse_docstring: ('test tests something.', 'Body text.', {'some_metadata': 'some data'})\nparse_rst desc: ('test tests something.', 'Body with `interpreted text`.', {})\n</output>",
+      "extra": {
+        "raw_output": "parse_docstring: ('test tests something.', 'Body text.', {'some_metadata': 'some data'})\nparse_rst desc: ('test tests something.', 'Body with `interpreted text`.', {})\n",
+        "returncode": 0,
+        "timestamp": 1794814596.597862,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_zJQHCFPkCkcW1QNdxrnu2077",
+      "role": "tool"
+    },
+    {
+      "content": "Now let me check the actual upstream fix behavior. The issue's proposed fix breaks single-line docstrings. Let me check what the real Django fix does (via reasoning about the codebase, not internet).",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; python -c \\\"\\n# Test the candidate's first test expectation against the ISSUE's proposed fix\\ndef trim_issue(docstring):\\n    if not docstring or not docstring.strip():\\n        return ''\\n    lines = docstring.expandtabs().splitlines()\\n    indent = min(len(line) - len(line.lstrip()) for line in lines[1:] if line.lstrip())\\n    trimmed = [lines[0].lstrip()] + [line[indent:].rstrip() for line in lines[1:]]\\n    return '\\\\n'.join(trimmed).strip()\\nd='test tests something.\\\\n\\\\n    Indented body line.\\\\n    Another indented line.\\\\n    '\\nprint('issue-fix result:', repr(trim_issue(d)))\\nprint('candidate expects: test tests something.\\\\\\\\n\\\\\\\\n    Indented body line.\\\\\\\\n    Another indented line.')\\n\\\"\"}",
+            "name": "bash"
+          },
+          "id": "call_00_4QBSRnmaj1aX9FY12Qn90005",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed; python -c \"\n# Test the candidate's first test expectation against the ISSUE's proposed fix\ndef trim_issue(docstring):\n    if not docstring or not docstring.strip():\n        return ''\n    lines = docstring.expandtabs().splitlines()\n    indent = min(len(line) - len(line.lstrip()) for line in lines[1:] if line.lstrip())\n    trimmed = [lines[0].lstrip()] + [line[indent:].rstrip() for line in lines[1:]]\n    return '\\n'.join(trimmed).strip()\nd='test tests something.\\n\\n    Indented body line.\\n    Another indented line.\\n    '\nprint('issue-fix result:', repr(trim_issue(d)))\nprint('candidate expects: test tests something.\\\\n\\\\n    Indented body line.\\\\n    Another indented line.')\n\"",
+            "tool_call_id": "call_00_4QBSRnmaj1aX9FY12Qn90005"
+          }
+        ],
+        "response": {
+          "id": "ea3adbbe-b9c2-4a1f-ac1b-70595818bf8f",
+          "created": 1794814596,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "Now let me check the actual upstream fix behavior. The issue's proposed fix breaks single-line docstrings. Let me check what the real Django fix does (via reasoning about the codebase, not internet).",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; python -c \\\"\\n# Test the candidate's first test expectation against the ISSUE's proposed fix\\ndef trim_issue(docstring):\\n    if not docstring or not docstring.strip():\\n        return ''\\n    lines = docstring.expandtabs().splitlines()\\n    indent = min(len(line) - len(line.lstrip()) for line in lines[1:] if line.lstrip())\\n    trimmed = [lines[0].lstrip()] + [line[indent:].rstrip() for line in lines[1:]]\\n    return '\\\\n'.join(trimmed).strip()\\nd='test tests something.\\\\n\\\\n    Indented body line.\\\\n    Another indented line.\\\\n    '\\nprint('issue-fix result:', repr(trim_issue(d)))\\nprint('candidate expects: test tests something.\\\\\\\\n\\\\\\\\n    Indented body line.\\\\\\\\n    Another indented line.')\\n\\\"\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_4QBSRnmaj1aX9FY12Qn90005",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 269,
+            "prompt_tokens": 8860,
+            "total_tokens": 9129,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 8704
+            },
+            "prompt_cache_hit_tokens": 8704,
+            "prompt_cache_miss_tokens": 156
+          }
+        },
+        "cost": 0.0029808,
+        "timestamp": 1794814598.611306
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\nissue-fix result: 'test tests something.\\n\\nIndented body line.\\nAnother indented line.'\ncandidate expects: test tests something.\n\n    Indented body line.\n    Another indented line.\n</output>",
+      "extra": {
+        "raw_output": "issue-fix result: 'test tests something.\\n\\nIndented body line.\\nAnother indented line.'\ncandidate expects: test tests something.\n\n    Indented body line.\n    Another indented line.\n",
+        "returncode": 0,
+        "timestamp": 1794814598.792094,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_4QBSRnmaj1aX9FY12Qn90005",
+      "role": "tool"
+    },
+    {
+      "content": "Key finding: the candidate's `test_first_line_not_empty` expects the body lines to keep 4-space indentation, but the issue's proposed fix (skip first line) would strip that indentation. Let me check what the actual Django fix does \u2014 it likely uses `inspect.cleandoc`-style logic. Let me reason about the real fix.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; python -c \\\"\\nimport inspect\\n# inspect.cleandoc is the canonical PEP 257 implementation\\nd='test tests something.\\\\n\\\\n    Indented body line.\\\\n    Another indented line.\\\\n    '\\nprint('cleandoc:', repr(inspect.cleandoc(d)))\\nprint('cleandoc single:', repr(inspect.cleandoc('test tests something.\\\\n    ')))\\n\\\"\"}",
+            "name": "bash"
+          },
+          "id": "call_00_XaQvcgDt326kWEWDvPHW7546",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed; python -c \"\nimport inspect\n# inspect.cleandoc is the canonical PEP 257 implementation\nd='test tests something.\\n\\n    Indented body line.\\n    Another indented line.\\n    '\nprint('cleandoc:', repr(inspect.cleandoc(d)))\nprint('cleandoc single:', repr(inspect.cleandoc('test tests something.\\n    ')))\n\"",
+            "tool_call_id": "call_00_XaQvcgDt326kWEWDvPHW7546"
+          }
+        ],
+        "response": {
+          "id": "2d2cb487-1598-4590-88d0-099d25cbc4ce",
+          "created": 1794814599,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "Key finding: the candidate's `test_first_line_not_empty` expects the body lines to keep 4-space indentation, but the issue's proposed fix (skip first line) would strip that indentation. Let me check what the actual Django fix does \u2014 it likely uses `inspect.cleandoc`-style logic. Let me reason about the real fix.",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; python -c \\\"\\nimport inspect\\n# inspect.cleandoc is the canonical PEP 257 implementation\\nd='test tests something.\\\\n\\\\n    Indented body line.\\\\n    Another indented line.\\\\n    '\\nprint('cleandoc:', repr(inspect.cleandoc(d)))\\nprint('cleandoc single:', repr(inspect.cleandoc('test tests something.\\\\n    ')))\\n\\\"\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_XaQvcgDt326kWEWDvPHW7546",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 198,
+            "prompt_tokens": 9197,
+            "total_tokens": 9395,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 8960
+            },
+            "prompt_cache_hit_tokens": 8960,
+            "prompt_cache_miss_tokens": 237
+          }
+        },
+        "cost": 0.0029966999999999997,
+        "timestamp": 1794814600.2887402
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\ncleandoc: 'test tests something.\\n\\nIndented body line.\\nAnother indented line.'\ncleandoc single: 'test tests something.\\n    '\n</output>",
+      "extra": {
+        "raw_output": "cleandoc: 'test tests something.\\n\\nIndented body line.\\nAnother indented line.'\ncleandoc single: 'test tests something.\\n    '\n",
+        "returncode": 0,
+        "timestamp": 1794814600.4808168,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_XaQvcgDt326kWEWDvPHW7546",
+      "role": "tool"
+    },
+    {
+      "role": "user",
+      "content": "Only 2 model calls remain in this phase. Submit the required JSON review record now using the completion marker. Avoid further exploration or optional edits."
+    },
+    {
+      "content": "",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; python - <<'PY'\\nimport json\\nrec = {\\n  \\\"trigger\\\": \\\"A view/model docstring whose text begins on the first line (e.g. 'test tests something.\\\\\\\\n\\\\\\\\n    Body...'), passed through trim_docstring/parse_docstring/parse_rst in django/contrib/admindocs/utils.py.\\\",\\n  \\\"expected_behavior\\\": \\\"trim_docstring should not treat the first line's zero indentation as the common indent; the body should be de-indented relative to the body lines so parse_docstring yields a clean title/description/metadata and parse_rst renders without the 'Error in \\\\\\\"default-role\\\\\\\" directive: no content permitted' system message.\\\",\\n  \\\"evidence\\\": \\\"Bug report explicitly states the culprit is `indent = min(... for line in lines if line.lstrip())` and that the first line's indent of 0 is the problem; proposes skipping the first line. Source: django/contrib/admindocs/utils.py trim_docstring (lines ~30-40) and parse_rst wrapping text in `.. default-role:: cmsreference` (lines ~75-95). Existing tests/admin_docs/test_utils.py only cover docstrings with an empty first line. Inference: the intended fix de-indents body lines (PEP 257 / inspect.cleandoc semantics), so body lines lose their common leading indentation.\\\",\\n  \\\"current_oracle\\\": \\\"Four new tests: (1) test_first_line_not_empty asserts trim_docstring output == 'test tests something.\\\\\\\\n\\\\\\\\n    Indented body line.\\\\\\\\n    Another indented line.' (body keeps 4-space indent); (2) single-line trim == 'test tests something.'; (3) parse_docstring title/description/metadata; (4) parse_rst output contains 'Body with' and not 'default-role'.\\\",\\n  \\\"alignment\\\": \\\"Partially misaligned. Tests (3) and (4) correctly check the reported defect (clean description and absence of the default-role error) and fail on buggy code. However test (1) encodes an expected value that contradicts the issue's own proposed fix and PEP 257 semantics: skipping the first line makes the common indent 4, so body lines are de-indented to 'Indented body line.' with NO leading spaces, not '    Indented body line.'. The candidate's expectation (preserving 4-space indent) is only what the buggy code produces, so it passes on buggy code and would FAIL after the intended fix. Test (2) also passes on buggy code and, under the issue's literal fix, would raise ValueError (min() of empty sequence) for a single-line docstring, so its expectation is not clearly supported.\\\",\\n  \\\"execution_evidence\\\": \\\"Ran `python runtests.py admin_docs.test_utils -v 2` in /testbed/tests: exit 1, 11 tests, 2 failures (test_first_line_not_empty_parse_docstring: description '    Body text.\\\\\\\\n\\\\\\\\n    some_metadata: some data' != 'Body text.'; test_first_line_not_empty_parse_rst: 'default-role' error present). test_first_line_not_empty and test_first_line_not_empty_single_line PASS on buggy code. Simulating the issue's proposed fix (skip first line) yields trim_docstring == 'test tests something.\\\\\\\\n\\\\\\\\nIndented body line.\\\\\\\\nAnother indented line.' (no leading spaces), confirming test (1)'s expected value is wrong for the fixed behavior; the same simulation raises ValueError for the single-line input.\\\",\\n  \\\"changes\\\": \\\"none\\\",\\n  \\\"uncertainty\\\": \\\"The exact reference fix is unknown; if it uses inspect.cleandoc-style logic the single-line case may be handled differently. But test (1)'s expectation of preserved 4-space body indentation is inconsistent with the issue's stated fix and PEP 257, so it is an unsupported oracle regardless.\\\",\\n  \\\"decision\\\": \\\"revise\\\",\\n  \\\"continue_review\\\": True,\\n  \\\"stop_reason\\\": \\\"continue\\\"\\n}\\nprint(\\\"COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\\")\\nprint(json.dumps(rec))\\nPY\"}",
+            "name": "bash"
+          },
+          "id": "call_00_hQ2pr5k4WV0o3ntL3FO44393",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed; python - <<'PY'\nimport json\nrec = {\n  \"trigger\": \"A view/model docstring whose text begins on the first line (e.g. 'test tests something.\\\\n\\\\n    Body...'), passed through trim_docstring/parse_docstring/parse_rst in django/contrib/admindocs/utils.py.\",\n  \"expected_behavior\": \"trim_docstring should not treat the first line's zero indentation as the common indent; the body should be de-indented relative to the body lines so parse_docstring yields a clean title/description/metadata and parse_rst renders without the 'Error in \\\"default-role\\\" directive: no content permitted' system message.\",\n  \"evidence\": \"Bug report explicitly states the culprit is `indent = min(... for line in lines if line.lstrip())` and that the first line's indent of 0 is the problem; proposes skipping the first line. Source: django/contrib/admindocs/utils.py trim_docstring (lines ~30-40) and parse_rst wrapping text in `.. default-role:: cmsreference` (lines ~75-95). Existing tests/admin_docs/test_utils.py only cover docstrings with an empty first line. Inference: the intended fix de-indents body lines (PEP 257 / inspect.cleandoc semantics), so body lines lose their common leading indentation.\",\n  \"current_oracle\": \"Four new tests: (1) test_first_line_not_empty asserts trim_docstring output == 'test tests something.\\\\n\\\\n    Indented body line.\\\\n    Another indented line.' (body keeps 4-space indent); (2) single-line trim == 'test tests something.'; (3) parse_docstring title/description/metadata; (4) parse_rst output contains 'Body with' and not 'default-role'.\",\n  \"alignment\": \"Partially misaligned. Tests (3) and (4) correctly check the reported defect (clean description and absence of the default-role error) and fail on buggy code. However test (1) encodes an expected value that contradicts the issue's own proposed fix and PEP 257 semantics: skipping the first line makes the common indent 4, so body lines are de-indented to 'Indented body line.' with NO leading spaces, not '    Indented body line.'. The candidate's expectation (preserving 4-space indent) is only what the buggy code produces, so it passes on buggy code and would FAIL after the intended fix. Test (2) also passes on buggy code and, under the issue's literal fix, would raise ValueError (min() of empty sequence) for a single-line docstring, so its expectation is not clearly supported.\",\n  \"execution_evidence\": \"Ran `python runtests.py admin_docs.test_utils -v 2` in /testbed/tests: exit 1, 11 tests, 2 failures (test_first_line_not_empty_parse_docstring: description '    Body text.\\\\n\\\\n    some_metadata: some data' != 'Body text.'; test_first_line_not_empty_parse_rst: 'default-role' error present). test_first_line_not_empty and test_first_line_not_empty_single_line PASS on buggy code. Simulating the issue's proposed fix (skip first line) yields trim_docstring == 'test tests something.\\\\n\\\\nIndented body line.\\\\nAnother indented line.' (no leading spaces), confirming test (1)'s expected value is wrong for the fixed behavior; the same simulation raises ValueError for the single-line input.\",\n  \"changes\": \"none\",\n  \"uncertainty\": \"The exact reference fix is unknown; if it uses inspect.cleandoc-style logic the single-line case may be handled differently. But test (1)'s expectation of preserved 4-space body indentation is inconsistent with the issue's stated fix and PEP 257, so it is an unsupported oracle regardless.\",\n  \"decision\": \"revise\",\n  \"continue_review\": True,\n  \"stop_reason\": \"continue\"\n}\nprint(\"COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\")\nprint(json.dumps(rec))\nPY",
+            "tool_call_id": "call_00_hQ2pr5k4WV0o3ntL3FO44393"
+          }
+        ],
+        "response": {
+          "id": "bc1efd93-c91c-4788-b03f-784b1dfd176d",
+          "created": 1794814600,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; python - <<'PY'\\nimport json\\nrec = {\\n  \\\"trigger\\\": \\\"A view/model docstring whose text begins on the first line (e.g. 'test tests something.\\\\\\\\n\\\\\\\\n    Body...'), passed through trim_docstring/parse_docstring/parse_rst in django/contrib/admindocs/utils.py.\\\",\\n  \\\"expected_behavior\\\": \\\"trim_docstring should not treat the first line's zero indentation as the common indent; the body should be de-indented relative to the body lines so parse_docstring yields a clean title/description/metadata and parse_rst renders without the 'Error in \\\\\\\"default-role\\\\\\\" directive: no content permitted' system message.\\\",\\n  \\\"evidence\\\": \\\"Bug report explicitly states the culprit is `indent = min(... for line in lines if line.lstrip())` and that the first line's indent of 0 is the problem; proposes skipping the first line. Source: django/contrib/admindocs/utils.py trim_docstring (lines ~30-40) and parse_rst wrapping text in `.. default-role:: cmsreference` (lines ~75-95). Existing tests/admin_docs/test_utils.py only cover docstrings with an empty first line. Inference: the intended fix de-indents body lines (PEP 257 / inspect.cleandoc semantics), so body lines lose their common leading indentation.\\\",\\n  \\\"current_oracle\\\": \\\"Four new tests: (1) test_first_line_not_empty asserts trim_docstring output == 'test tests something.\\\\\\\\n\\\\\\\\n    Indented body line.\\\\\\\\n    Another indented line.' (body keeps 4-space indent); (2) single-line trim == 'test tests something.'; (3) parse_docstring title/description/metadata; (4) parse_rst output contains 'Body with' and not 'default-role'.\\\",\\n  \\\"alignment\\\": \\\"Partially misaligned. Tests (3) and (4) correctly check the reported defect (clean description and absence of the default-role error) and fail on buggy code. However test (1) encodes an expected value that contradicts the issue's own proposed fix and PEP 257 semantics: skipping the first line makes the common indent 4, so body lines are de-indented to 'Indented body line.' with NO leading spaces, not '    Indented body line.'. The candidate's expectation (preserving 4-space indent) is only what the buggy code produces, so it passes on buggy code and would FAIL after the intended fix. Test (2) also passes on buggy code and, under the issue's literal fix, would raise ValueError (min() of empty sequence) for a single-line docstring, so its expectation is not clearly supported.\\\",\\n  \\\"execution_evidence\\\": \\\"Ran `python runtests.py admin_docs.test_utils -v 2` in /testbed/tests: exit 1, 11 tests, 2 failures (test_first_line_not_empty_parse_docstring: description '    Body text.\\\\\\\\n\\\\\\\\n    some_metadata: some data' != 'Body text.'; test_first_line_not_empty_parse_rst: 'default-role' error present). test_first_line_not_empty and test_first_line_not_empty_single_line PASS on buggy code. Simulating the issue's proposed fix (skip first line) yields trim_docstring == 'test tests something.\\\\\\\\n\\\\\\\\nIndented body line.\\\\\\\\nAnother indented line.' (no leading spaces), confirming test (1)'s expected value is wrong for the fixed behavior; the same simulation raises ValueError for the single-line input.\\\",\\n  \\\"changes\\\": \\\"none\\\",\\n  \\\"uncertainty\\\": \\\"The exact reference fix is unknown; if it uses inspect.cleandoc-style logic the single-line case may be handled differently. But test (1)'s expectation of preserved 4-space body indentation is inconsistent with the issue's stated fix and PEP 257, so it is an unsupported oracle regardless.\\\",\\n  \\\"decision\\\": \\\"revise\\\",\\n  \\\"continue_review\\\": True,\\n  \\\"stop_reason\\\": \\\"continue\\\"\\n}\\nprint(\\\"COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\\")\\nprint(json.dumps(rec))\\nPY\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_hQ2pr5k4WV0o3ntL3FO44393",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 934,
+            "prompt_tokens": 9484,
+            "total_tokens": 10418,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 9344
+            },
+            "prompt_cache_hit_tokens": 9344,
+            "prompt_cache_miss_tokens": 140
+          }
+        },
+        "cost": 0.003966,
+        "timestamp": 1794814605.989343
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\nRound submitted to controller.</output>",
+      "extra": {
+        "raw_output": "Round submitted to controller.",
+        "returncode": 0,
+        "timestamp": 1794814606.1758149,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_hQ2pr5k4WV0o3ntL3FO44393",
+      "role": "tool"
+    },
+    {
+      "role": "user",
+      "content": "REVIEW ROUND 2. Resolve the actionable concern recorded in the previous round. Finish this round with one standalone bash tool call whose output is:\nCOMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\nfollowed by one JSON object containing these keys:\ntrigger, expected_behavior, evidence, current_oracle, alignment,\nexecution_evidence, changes, uncertainty, decision, continue_review, stop_reason.\nUse a JSON boolean for continue_review. Set stop_reason to continue only when\ncontinue_review is true. Otherwise choose aligned, unresolved_uncertainty,\nround_limit, or resource_limit. You may print both lines with a Python command.\nDo not write the review record into the project checkout.\n"
+    },
+    {
+      "content": "I'll revise the candidate to fix the misaligned oracle in `test_first_line_not_empty` and the unsupported single-line expectation.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed; sed -n '120,170p' tests/admin_docs/test_utils.py\"}",
+            "name": "bash"
+          },
+          "id": "call_00_hF1PADBwLOlk6kapaxzN4110",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": null,
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed; sed -n '120,170p' tests/admin_docs/test_utils.py",
+            "tool_call_id": "call_00_hF1PADBwLOlk6kapaxzN4110"
+          }
+        ],
+        "response": {
+          "id": "5987a7be-c483-40c0-a892-54ffd555f11c",
+          "created": 1794814607,
+          "model": "deepseek-flash",
+          "object": "chat.completion",
+          "system_fingerprint": "bc19ba97cbe016479903222bb1578db6",
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "I'll revise the candidate to fix the misaligned oracle in `test_first_line_not_empty` and the unsupported single-line expectation.",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed; sed -n '120,170p' tests/admin_docs/test_utils.py\"}",
+                      "name": "bash"
+                    },
+                    "id": "call_00_hF1PADBwLOlk6kapaxzN4110",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null
+              },
+              "provider_specific_fields": {},
+              "logprobs": null
+            }
+          ],
+          "usage": {
+            "completion_tokens": 84,
+            "prompt_tokens": 10598,
+            "total_tokens": 10682,
+            "completion_tokens_details": null,
+            "prompt_tokens_details": {
+              "cached_tokens": 10368
+            },
+            "prompt_cache_hit_tokens": 10368,
+            "prompt_cache_miss_tokens": 230
+          }
+        },
+        "cost": 0.0032802000000000005,
+        "timestamp": 1794814608.884035
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n        self.assertEqual(parts['fragment'], markup)\n\n\n@unittest.skipUnless(docutils_is_available, \"no docutils installed.\")\nclass TestTrimDocstring(AdminDocsSimpleTestCase):\n    def test_first_line_not_empty(self):\n        \"\"\"Docstrings whose text starts on the first line are trimmed.\"\"\"\n        docstring = (\n            \"test tests something.\\n\"\n            \"\\n\"\n            \"    Indented body line.\\n\"\n            \"    Another indented line.\\n\"\n            \"    \"\n        )\n        self.assertEqual(\n            trim_docstring(docstring),\n            \"test tests something.\\n\\n    Indented body line.\\n    Another indented line.\",\n        )\n\n    def test_first_line_not_empty_single_line(self):\n        self.assertEqual(trim_docstring(\"test tests something.\\n    \"), \"test tests something.\")\n\n    def test_first_line_not_empty_parse_docstring(self):\n        docstring = (\n            \"test tests something.\\n\"\n            \"\\n\"\n            \"    Body text.\\n\"\n            \"\\n\"\n            \"    some_metadata: some data\\n\"\n            \"    \"\n        )\n        title, description, metadata = parse_docstring(docstring)\n        self.assertEqual(title, \"test tests something.\")\n        self.assertEqual(description, \"Body text.\")\n        self.assertEqual(metadata, {\"some_metadata\": \"some data\"})\n\n    def test_first_line_not_empty_parse_rst(self):\n        docstring = (\n            \"test tests something.\\n\"\n            \"\\n\"\n            \"    Body with `interpreted text`.\\n\"\n            \"    \"\n        )\n        title, description, metadata = parse_docstring(docstring)\n        self.assertEqual(title, \"test tests something.\")\n        output = parse_rst(description, \"view\", \"view:admindocs\")\n        self.assertIn(\"Body with\", output)\n        self.assertNotIn(\"default-role\", output)\n</output>",
+      "extra": {
+        "raw_output": "        self.assertEqual(parts['fragment'], markup)\n\n\n@unittest.skipUnless(docutils_is_available, \"no docutils installed.\")\nclass TestTrimDocstring(AdminDocsSimpleTestCase):\n    def test_first_line_not_empty(self):\n        \"\"\"Docstrings whose text starts on the first line are trimmed.\"\"\"\n        docstring = (\n            \"test tests something.\\n\"\n            \"\\n\"\n            \"    Indented body line.\\n\"\n            \"    Another indented line.\\n\"\n            \"    \"\n        )\n        self.assertEqual(\n            trim_docstring(docstring),\n            \"test tests something.\\n\\n    Indented body line.\\n    Another indented line.\",\n        )\n\n    def test_first_line_not_empty_single_line(self):\n        self.assertEqual(trim_docstring(\"test tests something.\\n    \"), \"test tests something.\")\n\n    def test_first_line_not_empty_parse_docstring(self):\n        docstring = (\n            \"test tests something.\\n\"\n            \"\\n\"\n            \"    Body text.\\n\"\n            \"\\n\"\n            \"    some_metadata: some data\\n\"\n            \"    \"\n        )\n        title, description, metadata = parse_docstring(docstring)\n        self.assertEqual(title, \"test tests something.\")\n        self.assertEqual(description, \"Body text.\")\n        self.assertEqual(metadata, {\"some_metadata\": \"some data\"})\n\n    def test_first_line_not_empty_parse_rst(self):\n        docstring = (\n            \"test tests something.\\n\"\n            \"\\n\"\n            \"    Body with `interpreted text`.\\n\"\n            \"    \"\n        )\n        title, description, metadata = parse_docstring(docstring)\n        self.assertEqual(title, \"test tests something.\")\n        output = parse_rst(description, \"view\", \"view:admindocs\")\n        self.assertIn(\"Body with\", output)\n        self.assertNotIn(\"default-role\", output)\n",
+        "returncode": 0,
+        "timestamp": 1794814608.992566,
+        "exception_info": ""
+      },
+      "tool_call_id": "call_00_hF1PADBwLOlk6kapaxzN4110",
+      "role": "tool"
+    }
+  ],
+  "trajectory_format": "mini-swe-agent-1.1"
+}

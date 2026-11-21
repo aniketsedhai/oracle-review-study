@@ -1,0 +1,55 @@
+diff --git a/test_requests.py b/test_requests.py
+index 137edc0..c089b23 100755
+--- a/test_requests.py
++++ b/test_requests.py
+@@ -1666,6 +1666,50 @@ def test_data_argument_accepts_tuples(list_of_tuples):
+         assert p.body == urlencode(data)
+ 
+ 
++def test_prepare_binary_string_payload():
++    """Ensure that a binary (non-ASCII bytes) payload is passed through
++    unchanged when preparing a request.
++
++    Regression test for the bug where a request with a binary payload
++    failed because ``to_native_string`` attempted to decode the bytes as
++    ASCII.
++    """
++    payload = u('ööö').encode('utf-8')
++    p = PreparedRequest()
++    p.prepare(
++        method='PUT',
++        url='http://www.example.com/put',
++        data=payload,
++        hooks=default_hooks()
++    )
++    assert p.body == payload
++    # The body must be sent as-is: the Content-Length must reflect the
++    # number of bytes actually transmitted, not a decoded character count.
++    assert p.headers['Content-Length'] == str(len(payload))
++
++
++def test_prepare_binary_string_payload_via_request():
++    """A ``Request`` with a binary payload should prepare without error and
++    preserve the exact bytes in the body."""
++    payload = u('ööö').encode('utf-8')
++    req = requests.Request('PUT', 'http://www.example.com/put', data=payload)
++    prep = req.prepare()
++    assert prep.body == payload
++    assert prep.headers['Content-Length'] == str(len(payload))
++
++
++def test_prepare_ascii_string_payload():
++    """An ASCII ``str`` payload should still be accepted and preserved."""
++    p = PreparedRequest()
++    p.prepare(
++        method='POST',
++        url='http://www.example.com/post',
++        data='hello world',
++        hooks=default_hooks()
++    )
++    assert p.body == 'hello world'
++
++
+ def assert_copy(p, p_copy):
+     for attr in ('method', 'url', 'headers', '_cookies', 'body', 'hooks'):
+         assert getattr(p, attr) == getattr(p_copy, attr)
